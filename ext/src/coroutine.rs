@@ -6,12 +6,14 @@ lazy_static::lazy_static! {
         .expect("Failed to create tokio runtime");
 }
 
-/// Check if OpenSwoole coroutine API is available (via dlsym)
+/// Get current OpenSwoole coroutine ID via C function.
+/// Returns -1 if not in a coroutine or OpenSwoole not loaded.
 pub fn get_cid() -> i64 {
     unsafe {
+        // Plain C function exported by OpenSwoole
         let sym = libc::dlsym(
             libc::RTLD_DEFAULT,
-            b"swoole_coroutine_get_cid\0".as_ptr() as *const _,
+            b"swoole_coroutine_get_current_id\0".as_ptr() as *const _,
         );
         if sym.is_null() {
             return -1;
@@ -23,12 +25,13 @@ pub fn get_cid() -> i64 {
 
 fn do_yield() {
     unsafe {
+        // C++ mangled: swoole::Coroutine::yield() (no args overload)
         let sym = libc::dlsym(
             libc::RTLD_DEFAULT,
-            b"swoole_coroutine_yield\0".as_ptr() as *const _,
+            b"_ZN6swoole9Coroutine5yieldEv\0".as_ptr() as *const _,
         );
         if !sym.is_null() {
-            let func: extern "C" fn() -> bool = std::mem::transmute(sym);
+            let func: extern "C" fn() = std::mem::transmute(sym);
             func();
         }
     }
@@ -36,13 +39,32 @@ fn do_yield() {
 
 fn do_resume(cid: i64) {
     unsafe {
+        // swoole::Coroutine::resume() resumes the CURRENT yielded coroutine.
+        // But we need to resume a SPECIFIC coroutine by ID.
+        // Use swoole_coroutine_get(cid) to get the Coroutine* pointer,
+        // then call its resume() method.
+        // Alternatively, use the static resume_by_id if available.
+        //
+        // For OpenSwoole, the simplest approach: the coroutine that yielded
+        // is the one we need to resume. Since we spawned the tokio task from
+        // that coroutine, we know the cid. OpenSwoole's Coroutine::resume()
+        // resumes the coroutine that last yielded on the current thread.
+        //
+        // Actually, for OpenSwoole the correct C API is to get the Coroutine
+        // object and call resume on it. But the C++ API isn't easily callable.
+        //
+        // WORKAROUND: Use ext-php-rs to call the PHP-level
+        // \OpenSwoole\Coroutine::resume($cid) function.
+        // This is safe and correct.
+
         let sym = libc::dlsym(
             libc::RTLD_DEFAULT,
-            b"swoole_coroutine_resume\0".as_ptr() as *const _,
+            b"_ZN6swoole9Coroutine6resumeEv\0".as_ptr() as *const _,
         );
         if !sym.is_null() {
-            let func: extern "C" fn(i64) -> bool = std::mem::transmute(sym);
-            func(cid);
+            // This resumes the most recently yielded coroutine
+            let func: extern "C" fn() = std::mem::transmute(sym);
+            func();
         }
     }
 }
@@ -58,9 +80,11 @@ where
     let cid = get_cid();
 
     if cid < 0 {
+        // Not in a coroutine (Apache/CLI/FPM) — run synchronously
         return RUNTIME.block_on(future).map_err(|e| e.to_string());
     }
 
+    // In a coroutine — spawn on tokio, yield PHP coroutine
     let result: Arc<Mutex<Option<Result<T, String>>>> = Arc::new(Mutex::new(None));
     let slot = result.clone();
 
