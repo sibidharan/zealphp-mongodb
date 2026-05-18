@@ -21,6 +21,39 @@ fn hash_table_to_doc(ht: &ZendHashTable) -> Result<Document, String> {
     Ok(doc)
 }
 
+fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
+    if let Some(oid_val) = ht.get("$oid") {
+        if let Some(hex) = oid_val.str() {
+            let oid = bson::oid::ObjectId::parse_str(hex).map_err(|e| e.to_string())?;
+            return Ok(Some(Bson::ObjectId(oid)));
+        }
+    }
+
+    if let Some(date_val) = ht.get("$date") {
+        if let Some(inner) = date_val.array() {
+            if let Some(num_long) = inner.get("$numberLong") {
+                if let Some(ms_str) = num_long.str() {
+                    let ms: i64 = ms_str.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                    return Ok(Some(Bson::DateTime(bson::DateTime::from_millis(ms))));
+                }
+            }
+        }
+        if let Some(ms) = date_val.long() {
+            return Ok(Some(Bson::DateTime(bson::DateTime::from_millis(ms))));
+        }
+    }
+
+    if let Some(regex_val) = ht.get("$regularExpression") {
+        if let Some(inner) = regex_val.array() {
+            let pattern = inner.get("pattern").and_then(|v| v.str()).unwrap_or("");
+            let options = inner.get("options").and_then(|v| v.str()).unwrap_or("");
+            return Ok(Some(Bson::RegularExpression(bson::Regex { pattern: pattern.to_string(), options: options.to_string() })));
+        }
+    }
+
+    Ok(None)
+}
+
 fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
     if zval.is_null() {
         return Ok(Bson::Null);
@@ -38,6 +71,10 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
         return Ok(Bson::String(s.to_string()));
     }
     if let Some(arr) = zval.array() {
+        if let Some(bson_type) = try_extended_json(arr)? {
+            return Ok(bson_type);
+        }
+
         let is_sequential = arr.iter().enumerate().all(|(i, (key, _))| {
             matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
         });

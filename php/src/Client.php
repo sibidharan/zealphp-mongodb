@@ -35,6 +35,21 @@ class Client
         return $this->selectCollection($databaseName, $collectionName, $options);
     }
 
+    public function listDatabases(array $options = []): array
+    {
+        $names = zealphp_mongodb_list_databases($this->poolId);
+        $result = [];
+        foreach ($names as $name) {
+            $result[] = ['name' => $name];
+        }
+        return $result;
+    }
+
+    public function listDatabaseNames(array $options = []): array
+    {
+        return zealphp_mongodb_list_databases($this->poolId);
+    }
+
     public function getPoolId(): int
     {
         return $this->poolId;
