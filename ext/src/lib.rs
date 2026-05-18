@@ -1,3 +1,4 @@
+mod async_store;
 mod bson_convert;
 mod coroutine;
 mod cursor;
@@ -218,6 +219,67 @@ pub fn zealphp_mongodb_cursor_next(cursor_id: i64) -> PhpResult<Zval> {
 #[php_function]
 pub fn zealphp_mongodb_cursor_close(cursor_id: i64) -> PhpResult<()> {
     cursor::remove(cursor_id as u64).map_err(|e| PhpException::default(e))
+}
+
+// --- Test function ---
+#[php_function]
+pub fn zealphp_mongodb_test_new() -> String {
+    "test_new_works".to_string()
+}
+
+// --- Async API (eventfd-based) ---
+
+#[php_function]
+pub fn zealphp_mongodb_find_one_async(
+    pool_id: i64,
+    db: &str,
+    col: &str,
+    filter: &Zval,
+) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
+
+    let task_id = async_store::new_task_id();
+    let efd = coroutine::create_eventfd();
+    if efd < 0 {
+        return Err(PhpException::default("Failed to create eventfd".to_string()));
+    }
+
+    coroutine::spawn_find_one(client, db.to_string(), col.to_string(), filter_doc, task_id, efd);
+
+    let mut result = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut efd_zval = Zval::new();
+    efd_zval.set_long(efd as i64);
+    let _ = ht.insert("efd", efd_zval);
+    let mut tid_zval = Zval::new();
+    tid_zval.set_long(task_id as i64);
+    let _ = ht.insert("task_id", tid_zval);
+    result.set_hashtable(ht);
+    Ok(result)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_get_result(task_id: i64) -> PhpResult<Zval> {
+    match async_store::take_result(task_id as u64) {
+        Some(Some(doc)) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(None) => {
+            let mut z = Zval::new();
+            z.set_null();
+            Ok(z)
+        }
+        None => {
+            let mut z = Zval::new();
+            z.set_null();
+            Ok(z)
+        }
+    }
+}
+
+#[php_function]
+pub fn zealphp_mongodb_close_eventfd(fd: i64) -> PhpResult<()> {
+    unsafe { libc::close(fd as i32); }
+    Ok(())
 }
 
 #[php_module]

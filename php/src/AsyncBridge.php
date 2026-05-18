@@ -2,11 +2,17 @@
 namespace ZealPHP\MongoDB;
 
 /**
- * Bridges synchronous Rust extension calls into OpenSwoole coroutines.
+ * Async bridge using eventfd + OpenSwoole Event::add().
  *
- * Strategy: spawn the blocking Rust call in a child coroutine and wait
- * on a Channel. The child coroutine blocks its own stack but the parent
- * yields on Channel::pop(), allowing the worker to handle other requests.
+ * Flow:
+ * 1. Rust spawns tokio task, returns eventfd + task_id
+ * 2. PHP registers eventfd with OpenSwoole's event loop
+ * 3. PHP yields on Channel::pop() (fiber suspends)
+ * 4. Tokio completes → writes to eventfd → OpenSwoole fires callback
+ * 5. Callback fetches result, pushes to Channel
+ * 6. PHP fiber resumes with result
+ *
+ * No thread blocking. No C++ ABI. Pure eventfd signaling.
  */
 class AsyncBridge
 {
@@ -17,36 +23,49 @@ class AsyncBridge
     }
 
     /**
-     * Run a blocking callable asynchronously via child coroutine + Channel.
+     * Run find_one asynchronously via eventfd + Event::add.
+     * Non-blocking in coroutine mode, synchronous fallback outside.
      */
-    public static function run(callable $fn): mixed
+    public static function findOneAsync(int $poolId, string $db, string $col, array $filter): ?array
     {
         if (!self::isCoroutineMode()) {
-            return $fn();
+            // Sync fallback
+            $opts = null;
+            return zealphp_mongodb_find_one($poolId, $db, $col, $filter, $opts);
         }
+
+        // Async path: eventfd + Event::add
+        $async = zealphp_mongodb_find_one_async($poolId, $db, $col, $filter);
+        $efd = $async['efd'];
+        $taskId = $async['task_id'];
 
         $chan = new \OpenSwoole\Coroutine\Channel(1);
 
-        // Child coroutine — blocks on the Rust block_on() call
-        // but that's OK because it's a separate coroutine stack
-        \OpenSwoole\Coroutine::create(function () use ($fn, $chan) {
-            try {
-                $result = $fn();
-                $chan->push(['v' => $result]);
-            } catch (\Throwable $e) {
-                $chan->push(['e' => $e->getMessage()]);
-            }
+        // Register eventfd with OpenSwoole's event loop
+        \OpenSwoole\Event::add($efd, function ($fd) use ($chan, $taskId, $efd) {
+            // Tokio signaled — result is ready
+            $result = zealphp_mongodb_get_result($taskId);
+            zealphp_mongodb_close_eventfd($efd);
+            \OpenSwoole\Event::del($efd);
+            $chan->push($result);
         });
 
-        // Parent yields here — Channel::pop() is coroutine-aware
-        $resp = $chan->pop(10.0); // 10s timeout
+        // Yield the fiber — OpenSwoole schedules other coroutines
+        $result = $chan->pop(10.0);
 
-        if ($resp === false) {
-            throw new Exception\RuntimeException("MongoDB query timeout");
+        if ($result === false) {
+            zealphp_mongodb_close_eventfd($efd);
+            throw new Exception\RuntimeException("Async findOne timeout");
         }
-        if (isset($resp['e'])) {
-            throw new Exception\RuntimeException($resp['e']);
-        }
-        return $resp['v'];
+
+        return $result;
+    }
+
+    /**
+     * Generic sync wrapper for operations without async variant yet.
+     */
+    public static function runSync(callable $fn): mixed
+    {
+        return $fn();
     }
 }
