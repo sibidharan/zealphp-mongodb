@@ -9,6 +9,8 @@ use ext_php_rs::types::{ZendHashTable, Zval};
 
 #[php_function]
 pub fn zealphp_mongodb_version() -> String {
+    // Eagerly init tokio runtime BEFORE HOOK_ALL is enabled
+    coroutine::init_runtime();
     "0.1.0".to_string()
 }
 

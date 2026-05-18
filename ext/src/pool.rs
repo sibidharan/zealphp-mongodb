@@ -13,7 +13,7 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 pub fn connect(uri: &str) -> Result<u64, String> {
     let uri_owned = uri.to_string();
-    let client = coroutine::RUNTIME
+    let client = coroutine::runtime()
         .block_on(async move { Client::with_uri_str(&uri_owned).await })
         .map_err(|e| format!("Connection failed: {}", e))?;
 

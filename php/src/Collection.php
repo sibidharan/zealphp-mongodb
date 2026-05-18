@@ -12,48 +12,55 @@ class Collection
 
     public function findOne(array|object $filter = [], array $options = []): ?array
     {
-        $opts = $options ?: null;
-        return zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, (array)$filter, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $f = (array)$filter; $o = $options ?: null;
+        return AsyncBridge::run(fn() => zealphp_mongodb_find_one($p, $d, $c, $f, $o));
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor
     {
-        $opts = $options ?: null;
-        $cursorId = zealphp_mongodb_find($this->poolId, $this->dbName, $this->colName, (array)$filter, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $f = (array)$filter; $o = $options ?: null;
+        $cursorId = AsyncBridge::run(fn() => zealphp_mongodb_find($p, $d, $c, $f, $o));
         return new Cursor($cursorId);
     }
 
     public function insertOne(array|object $document, array $options = []): InsertOneResult
     {
-        $opts = $options ?: null;
-        $result = zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, (array)$document, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $doc = (array)$document; $o = $options ?: null;
+        $result = AsyncBridge::run(fn() => zealphp_mongodb_insert_one($p, $d, $c, $doc, $o));
         return new InsertOneResult($result);
     }
 
     public function updateOne(array|object $filter, array|object $update, array $options = []): UpdateResult
     {
-        $opts = $options ?: null;
-        $result = zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, (array)$filter, (array)$update, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $f = (array)$filter; $u = (array)$update; $o = $options ?: null;
+        $result = AsyncBridge::run(fn() => zealphp_mongodb_update_one($p, $d, $c, $f, $u, $o));
         return new UpdateResult($result);
     }
 
     public function deleteOne(array|object $filter, array $options = []): DeleteResult
     {
-        $opts = $options ?: null;
-        $result = zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, (array)$filter, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $f = (array)$filter; $o = $options ?: null;
+        $result = AsyncBridge::run(fn() => zealphp_mongodb_delete_one($p, $d, $c, $f, $o));
         return new DeleteResult($result);
     }
 
     public function countDocuments(array|object $filter = [], array $options = []): int
     {
-        $opts = $options ?: null;
-        return zealphp_mongodb_count_documents($this->poolId, $this->dbName, $this->colName, (array)$filter, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $f = (array)$filter; $o = $options ?: null;
+        return AsyncBridge::run(fn() => zealphp_mongodb_count_documents($p, $d, $c, $f, $o));
     }
 
     public function aggregate(array $pipeline, array $options = []): Cursor
     {
-        $opts = $options ?: null;
-        $cursorId = zealphp_mongodb_aggregate($this->poolId, $this->dbName, $this->colName, $pipeline, $opts);
+        $p = $this->poolId; $d = $this->dbName; $c = $this->colName;
+        $o = $options ?: null;
+        $cursorId = AsyncBridge::run(fn() => zealphp_mongodb_aggregate($p, $d, $c, $pipeline, $o));
         return new Cursor($cursorId);
     }
 
