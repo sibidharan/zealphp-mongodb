@@ -1,0 +1,14 @@
+{
+    "name": "zealphp/mongodb",
+    "description": "Async MongoDB driver for OpenSwoole — drop-in replacement for mongodb/mongodb",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "ZealPHP\\MongoDB\\": "src/"
+        }
+    }
+}

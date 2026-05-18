@@ -1,0 +1,23 @@
+[package]
+name = "zealphp-mongodb-ext"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "zealphp_mongodb"
+crate-type = ["cdylib"]
+
+[dependencies]
+mongodb = "3"
+tokio = { version = "1", features = ["full"] }
+ext-php-rs = "0.13"
+bson = "2"
+lazy_static = "1"
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
+futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
