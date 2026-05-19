@@ -20,11 +20,6 @@
     <issueHandlers>
         <MissingOverrideAttribute errorLevel="suppress"/>
         <MissingTemplateParam errorLevel="suppress"/>
-        <InvalidCast>
-            <errorLevel type="suppress">
-                <file name="php/src/Collection.php"/>
-            </errorLevel>
-        </InvalidCast>
         <UndefinedClass>
             <errorLevel type="suppress">
                 <referencedClass name="MongoDB\BSON\ObjectId"/>
@@ -32,6 +27,9 @@
                 <referencedClass name="MongoDB\BSON\Regex"/>
                 <referencedClass name="MongoDB\Model\BSONDocument"/>
                 <referencedClass name="MongoDB\Model\BSONArray"/>
+                <referencedClass name="OpenSwoole\Coroutine"/>
+                <referencedClass name="OpenSwoole\Coroutine\Channel"/>
+                <referencedClass name="OpenSwoole\Event"/>
             </errorLevel>
         </UndefinedClass>
     </issueHandlers>
