@@ -234,6 +234,27 @@ class Collection
         if ($data instanceof \MongoDB\Model\BSONArray) {
             return self::prepareBSON($data->getArrayCopy());
         }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\Binary) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\Decimal128) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\Timestamp) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\Javascript) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\MinKey) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\MaxKey) {
+            return $data->jsonSerialize();
+        }
+        if ($data instanceof \ZealPHP\MongoDB\BSON\Int64) {
+            return (int)(string)$data;
+        }
         if (is_array($data)) {
             $result = [];
             foreach ($data as $key => $value) {

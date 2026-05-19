@@ -1,6 +1,16 @@
 use bson::{Bson, Document};
 use ext_php_rs::types::{ZendHashTable, Zval};
 
+fn base64_decode(input: &str) -> Vec<u8> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(input).unwrap_or_default()
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input)
+}
+
 pub fn php_to_doc(zval: &Zval) -> Result<Document, String> {
     match zval.array() {
         Some(arr) => hash_table_to_doc(arr),
@@ -48,6 +58,64 @@ fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
             let pattern = inner.get("pattern").and_then(|v| v.str()).unwrap_or("");
             let options = inner.get("options").and_then(|v| v.str()).unwrap_or("");
             return Ok(Some(Bson::RegularExpression(bson::Regex { pattern: pattern.to_string(), options: options.to_string() })));
+        }
+    }
+
+    // Binary: {"$binary": {"base64": "AAEC", "subType": "00"}}
+    if let Some(bin_val) = ht.get("$binary") {
+        if let Some(inner) = bin_val.array() {
+            let b64 = inner.get("base64").and_then(|v| v.str()).unwrap_or("");
+            let sub_type_str = inner.get("subType").and_then(|v| v.str()).unwrap_or("00");
+            let sub_type_u8 = u8::from_str_radix(sub_type_str, 16).unwrap_or(0);
+            let bytes = base64_decode(b64);
+            return Ok(Some(Bson::Binary(bson::Binary {
+                subtype: bson::spec::BinarySubtype::from(sub_type_u8),
+                bytes,
+            })));
+        }
+    }
+
+    // Decimal128: {"$numberDecimal": "3.14"}
+    if let Some(dec_val) = ht.get("$numberDecimal") {
+        if let Some(s) = dec_val.str() {
+            let d128 = s.parse::<bson::Decimal128>().unwrap_or_else(|_| "0".parse::<bson::Decimal128>().unwrap());
+            return Ok(Some(Bson::Decimal128(d128)));
+        }
+    }
+
+    // Timestamp: {"$timestamp": {"t": 123, "i": 1}}
+    if let Some(ts_val) = ht.get("$timestamp") {
+        if let Some(inner) = ts_val.array() {
+            let t = inner.get("t").and_then(|v| v.long()).unwrap_or(0) as u32;
+            let i = inner.get("i").and_then(|v| v.long()).unwrap_or(0) as u32;
+            return Ok(Some(Bson::Timestamp(bson::Timestamp { time: t, increment: i })));
+        }
+    }
+
+    // MinKey: {"$minKey": 1}
+    if ht.get("$minKey").is_some() {
+        return Ok(Some(Bson::MinKey));
+    }
+
+    // MaxKey: {"$maxKey": 1}
+    if ht.get("$maxKey").is_some() {
+        return Ok(Some(Bson::MaxKey));
+    }
+
+    // Javascript with scope: {"$code": "...", "$scope": {...}}
+    // Javascript without scope: {"$code": "..."}
+    if let Some(code_val) = ht.get("$code") {
+        if let Some(code_str) = code_val.str() {
+            if let Some(scope_val) = ht.get("$scope") {
+                if let Some(scope_arr) = scope_val.array() {
+                    let scope_doc = hash_table_to_doc(scope_arr)?;
+                    return Ok(Some(Bson::JavaScriptCodeWithScope(bson::JavaScriptCodeWithScope {
+                        code: code_str.to_string(),
+                        scope: scope_doc,
+                    })));
+                }
+            }
+            return Ok(Some(Bson::JavaScriptCode(code_str.to_string())));
         }
     }
 
@@ -140,7 +208,21 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::Binary(bin) => {
-            let _ = zval.set_string(&String::from_utf8_lossy(&bin.bytes), false);
+            // Return extended JSON: {"$binary": {"base64": ..., "subType": ...}}
+            let mut outer = ZendHashTable::new();
+            let mut inner = ZendHashTable::new();
+            let b64 = base64_encode(&bin.bytes);
+            let sub_type = format!("{:02x}", u8::from(bin.subtype));
+            let mut b64_zval = Zval::new();
+            let _ = b64_zval.set_string(&b64, false);
+            let _ = inner.insert("base64", b64_zval);
+            let mut st_zval = Zval::new();
+            let _ = st_zval.set_string(&sub_type, false);
+            let _ = inner.insert("subType", st_zval);
+            let mut inner_zval = Zval::new();
+            inner_zval.set_hashtable(inner);
+            let _ = outer.insert("$binary", inner_zval);
+            zval.set_hashtable(outer);
         }
         Bson::RegularExpression(re) => {
             let s = format!("/{}/{}", re.pattern, re.options);
@@ -151,6 +233,39 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
         }
         Bson::Decimal128(d) => {
             let _ = zval.set_string(&d.to_string(), false);
+        }
+        Bson::JavaScriptCode(code) => {
+            let mut ht = ZendHashTable::new();
+            let mut code_zval = Zval::new();
+            let _ = code_zval.set_string(code, false);
+            let _ = ht.insert("$code", code_zval);
+            zval.set_hashtable(ht);
+        }
+        Bson::JavaScriptCodeWithScope(jsc) => {
+            // Return extended JSON: {"$code": ..., "$scope": {...}}
+            let mut ht = ZendHashTable::new();
+            let mut code_zval = Zval::new();
+            let _ = code_zval.set_string(&jsc.code, false);
+            let _ = ht.insert("$code", code_zval);
+            let scope_zval = doc_to_php(&jsc.scope);
+            let _ = ht.insert("$scope", scope_zval);
+            zval.set_hashtable(ht);
+        }
+        Bson::MinKey => {
+            // Return extended JSON: {"$minKey": 1}
+            let mut ht = ZendHashTable::new();
+            let mut one = Zval::new();
+            one.set_long(1);
+            let _ = ht.insert("$minKey", one);
+            zval.set_hashtable(ht);
+        }
+        Bson::MaxKey => {
+            // Return extended JSON: {"$maxKey": 1}
+            let mut ht = ZendHashTable::new();
+            let mut one = Zval::new();
+            one.set_long(1);
+            let _ = ht.insert("$maxKey", one);
+            zval.set_hashtable(ht);
         }
         _ => {
             zval.set_null();
