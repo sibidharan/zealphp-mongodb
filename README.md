@@ -30,10 +30,36 @@ Drop-in replacement for [`mongodb/mongodb`](https://github.com/mongodb/mongo-php
 ### Build the Rust extension
 
 ```bash
+# Prerequisites
+sudo apt-get install -y php-dev libclang-dev   # PHP headers + libclang for bindgen
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust 1.88+
+
+# Build
 cd ext
 cargo build --release
+
+# Install
 sudo cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_dir');")/zealphp_mongodb.so
 echo "extension=zealphp_mongodb.so" | sudo tee $(php --ini | grep "Scan for" | cut -d: -f2 | tr -d ' ')/99-zealphp-mongodb.ini
+
+# Verify
+php -r "echo zealphp_mongodb_version();"  # should print 0.2.0
+```
+
+### Docker
+
+The extension builds automatically in Docker — see the [labs-devops Dockerfile](https://github.com/sibidharan/labs-devops) for reference:
+
+```dockerfile
+COPY --from=rust:latest /usr/local/cargo /usr/local/cargo
+COPY --from=rust:latest /usr/local/rustup /usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+
+RUN apt-get install -y libclang-dev && \
+    git clone https://github.com/sibidharan/zealphp-mongodb.git /tmp/zealphp-mongodb && \
+    cd /tmp/zealphp-mongodb/ext && cargo build --release && \
+    cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_dir');")/zealphp_mongodb.so && \
+    rm -rf /tmp/zealphp-mongodb/ext/target
 ```
 
 ### Install the PHP library
