@@ -147,7 +147,7 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
             matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
         });
         if is_sequential {
-            let mut bson_arr = Vec::new();
+            let mut bson_arr = Vec::with_capacity(arr.len());
             for (_, val) in arr.iter() {
                 bson_arr.push(zval_to_bson(val)?);
             }

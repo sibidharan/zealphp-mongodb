@@ -22,7 +22,7 @@ pub fn get_store() -> &'static RwLock<HashMap<u64, SharedCursor>> {
 }
 
 pub fn store_cursor(cursor: Cursor<Document>) -> u64 {
-    let id = NEXT_CURSOR_ID.fetch_add(1, Ordering::SeqCst);
+    let id = NEXT_CURSOR_ID.fetch_add(1, Ordering::Relaxed);
     CURSORS
         .write()
         .unwrap()

@@ -26,7 +26,7 @@ pub struct BatchResult {
 }
 
 pub fn new_task_id() -> u64 {
-    NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst)
+    NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 pub fn store_result(task_id: u64, result: AsyncResult) {

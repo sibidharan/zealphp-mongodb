@@ -611,7 +611,7 @@ pub fn zealphp_mongodb_find_cursor_async(
     filter: &Zval,
     opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
-    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let client = pool::get_async_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let find_opts = parse_find_options(opts);
 
@@ -676,7 +676,7 @@ pub fn zealphp_mongodb_aggregate_cursor_async(
     col: &str,
     pipeline: &Zval,
 ) -> PhpResult<Zval> {
-    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let client = pool::get_async_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let pipeline_docs = bson_convert::php_to_pipeline(pipeline).map_err(|e| PhpException::default(e))?;
 
     let task_id = async_store::new_task_id();
@@ -850,7 +850,7 @@ pub fn zealphp_mongodb_exec_async(
     filter_or_doc: &Zval,
     update_or_pipeline: Option<&Zval>,
 ) -> PhpResult<Zval> {
-    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let client = pool::get_async_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = if !filter_or_doc.is_null() {
         Some(bson_convert::php_to_doc(filter_or_doc).map_err(|e| PhpException::default(e))?)
     } else {

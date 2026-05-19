@@ -3,20 +3,51 @@ use std::sync::Once;
 
 use crate::async_store;
 
-static mut RUNTIME_PTR: *const Runtime = std::ptr::null();
-static INIT: Once = Once::new();
+static mut SYNC_RUNTIME_PTR: *const Runtime = std::ptr::null();
+static mut ASYNC_RUNTIME_PTR: *const Runtime = std::ptr::null();
+static SYNC_INIT: Once = Once::new();
+static ASYNC_INIT: Once = Once::new();
 
 pub fn init_runtime() {
-    INIT.call_once(|| {
-        let rt = Box::new(Runtime::new().expect("Failed to create tokio runtime"));
-        unsafe { RUNTIME_PTR = Box::into_raw(rt); }
+    init_sync_runtime();
+}
+
+fn init_sync_runtime() {
+    SYNC_INIT.call_once(|| {
+        let rt = Box::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create sync runtime"),
+        );
+        unsafe { SYNC_RUNTIME_PTR = Box::into_raw(rt); }
+    });
+}
+
+fn init_async_runtime() {
+    ASYNC_INIT.call_once(|| {
+        let rt = Box::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .expect("Failed to create async runtime"),
+        );
+        unsafe { ASYNC_RUNTIME_PTR = Box::into_raw(rt); }
     });
 }
 
 pub fn runtime() -> &'static Runtime {
     unsafe {
-        if RUNTIME_PTR.is_null() { init_runtime(); }
-        &*RUNTIME_PTR
+        if SYNC_RUNTIME_PTR.is_null() { init_sync_runtime(); }
+        &*SYNC_RUNTIME_PTR
+    }
+}
+
+pub fn async_runtime() -> &'static Runtime {
+    unsafe {
+        if ASYNC_RUNTIME_PTR.is_null() { init_async_runtime(); }
+        &*ASYNC_RUNTIME_PTR
     }
 }
 
@@ -53,7 +84,7 @@ pub fn spawn_task<F>(future: F, task_id: u64, efd: i32)
 where
     F: std::future::Future<Output = async_store::AsyncResult> + Send + 'static,
 {
-    runtime().spawn(async move {
+    async_runtime().spawn(async move {
         let result = future.await;
         async_store::store_result(task_id, result);
         signal_eventfd(efd);
@@ -64,7 +95,7 @@ pub fn spawn_batch_task<F>(future: F, task_id: u64, efd: i32)
 where
     F: std::future::Future<Output = async_store::BatchResult> + Send + 'static,
 {
-    runtime().spawn(async move {
+    async_runtime().spawn(async move {
         let result = future.await;
         async_store::store_batch(task_id, result);
         signal_eventfd(efd);
