@@ -70,10 +70,10 @@ pub async fn exec_async(
             let doc = filter_or_doc.unwrap_or_default();
             match collection.insert_one(doc).await {
                 Ok(r) => {
-                    let id_str = bson_id_to_string(&r.inserted_id);
+                    let id_json = bson_id_to_json(&r.inserted_id);
                     format!(
-                        "{{\"inserted_id\":\"{}\",\"acknowledged\":true,\"inserted_count\":1}}",
-                        id_str
+                        "{{\"inserted_id\":{},\"acknowledged\":true,\"inserted_count\":1}}",
+                        id_json
                     )
                 }
                 Err(e) => error_json(&e.to_string()),
@@ -245,7 +245,7 @@ pub async fn exec_async(
             match collection.insert_many(docs_bson).await {
                 Ok(r) => {
                     let ids: Vec<String> = r.inserted_ids.iter().map(|(_, id)| {
-                        format!("\"{}\"", bson_id_to_string(id))
+                        bson_id_to_json(id)
                     }).collect();
                     format!("{{\"inserted_ids\":[{}],\"acknowledged\":true,\"inserted_count\":{}}}", ids.join(","), r.inserted_ids.len())
                 }
@@ -284,7 +284,7 @@ fn extract_options(filter_or_doc: Option<Document>) -> (Option<Document>, Option
 
 fn update_result_json(r: &mongodb::results::UpdateResult) -> String {
     let upserted = match &r.upserted_id {
-        Some(id) => format!(",\"upserted_id\":\"{}\"", bson_id_to_string(id)),
+        Some(id) => format!(",\"upserted_id\":{}", bson_id_to_json(id)),
         None => String::new(),
     };
     format!(
@@ -293,13 +293,13 @@ fn update_result_json(r: &mongodb::results::UpdateResult) -> String {
     )
 }
 
-fn bson_id_to_string(bson: &bson::Bson) -> String {
+fn bson_id_to_json(bson: &bson::Bson) -> String {
     match bson {
-        bson::Bson::ObjectId(oid) => oid.to_hex(),
-        bson::Bson::String(s) => s.clone(),
+        bson::Bson::ObjectId(oid) => format!("{{\"$oid\":\"{}\"}}", oid.to_hex()),
+        bson::Bson::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         bson::Bson::Int32(n) => n.to_string(),
         bson::Bson::Int64(n) => n.to_string(),
-        other => serde_json::to_string(other).unwrap_or_else(|_| other.to_string()),
+        other => serde_json::to_string(other).unwrap_or_else(|_| "null".to_string()),
     }
 }
 

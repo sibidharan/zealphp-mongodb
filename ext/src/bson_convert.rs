@@ -192,10 +192,23 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             let _ = zval.set_string(s, false);
         }
         Bson::ObjectId(oid) => {
-            let _ = zval.set_string(&oid.to_hex(), false);
+            let mut ht = ZendHashTable::new();
+            let mut oid_zval = Zval::new();
+            let _ = oid_zval.set_string(&oid.to_hex(), false);
+            let _ = ht.insert("$oid", oid_zval);
+            zval.set_hashtable(ht);
         }
         Bson::DateTime(dt) => {
-            zval.set_long(dt.timestamp_millis());
+            let mut outer = ZendHashTable::new();
+            let mut inner = ZendHashTable::new();
+            let ms_str = dt.timestamp_millis().to_string();
+            let mut ms_zval = Zval::new();
+            let _ = ms_zval.set_string(&ms_str, false);
+            let _ = inner.insert("$numberLong", ms_zval);
+            let mut inner_zval = Zval::new();
+            inner_zval.set_hashtable(inner);
+            let _ = outer.insert("$date", inner_zval);
+            zval.set_hashtable(outer);
         }
         Bson::Document(doc) => {
             return doc_to_php(doc);
@@ -225,14 +238,39 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(outer);
         }
         Bson::RegularExpression(re) => {
-            let s = format!("/{}/{}", re.pattern, re.options);
-            let _ = zval.set_string(&s, false);
+            let mut outer = ZendHashTable::new();
+            let mut inner = ZendHashTable::new();
+            let mut p_zval = Zval::new();
+            let _ = p_zval.set_string(&re.pattern, false);
+            let _ = inner.insert("pattern", p_zval);
+            let mut o_zval = Zval::new();
+            let _ = o_zval.set_string(&re.options, false);
+            let _ = inner.insert("options", o_zval);
+            let mut inner_zval = Zval::new();
+            inner_zval.set_hashtable(inner);
+            let _ = outer.insert("$regularExpression", inner_zval);
+            zval.set_hashtable(outer);
         }
         Bson::Timestamp(ts) => {
-            zval.set_long(ts.time as i64);
+            let mut outer = ZendHashTable::new();
+            let mut inner = ZendHashTable::new();
+            let mut t_zval = Zval::new();
+            t_zval.set_long(ts.time as i64);
+            let _ = inner.insert("t", t_zval);
+            let mut i_zval = Zval::new();
+            i_zval.set_long(ts.increment as i64);
+            let _ = inner.insert("i", i_zval);
+            let mut inner_zval = Zval::new();
+            inner_zval.set_hashtable(inner);
+            let _ = outer.insert("$timestamp", inner_zval);
+            zval.set_hashtable(outer);
         }
         Bson::Decimal128(d) => {
-            let _ = zval.set_string(&d.to_string(), false);
+            let mut ht = ZendHashTable::new();
+            let mut d_zval = Zval::new();
+            let _ = d_zval.set_string(&d.to_string(), false);
+            let _ = ht.insert("$numberDecimal", d_zval);
+            zval.set_hashtable(ht);
         }
         Bson::JavaScriptCode(code) => {
             let mut ht = ZendHashTable::new();

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use function is_array;
+
 class UpdateResult
 {
     public function __construct(private array $result)
@@ -27,7 +29,9 @@ class UpdateResult
 
     public function getUpsertedId(): mixed
     {
-        return $this->result['upserted_id'] ?? null;
+        $id = $this->result['upserted_id'] ?? null;
+
+        return is_array($id) ? Collection::wrapDoc($id) : $id;
     }
 
     public function isAcknowledged(): bool

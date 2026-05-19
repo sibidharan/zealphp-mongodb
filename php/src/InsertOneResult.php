@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use function is_array;
+
 class InsertOneResult
 {
     public function __construct(private array $result)
@@ -17,7 +19,9 @@ class InsertOneResult
 
     public function getInsertedId(): mixed
     {
-        return $this->result['inserted_id'] ?? null;
+        $id = $this->result['inserted_id'] ?? null;
+
+        return is_array($id) ? Collection::wrapDoc($id) : $id;
     }
 
     public function isAcknowledged(): bool

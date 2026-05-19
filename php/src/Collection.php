@@ -20,7 +20,9 @@ use ZealPHP\MongoDB\BSON\Timestamp;
 use function array_is_list;
 use function array_map;
 use function array_merge;
+use function base64_decode;
 use function count;
+use function hexdec;
 use function is_array;
 use function is_object;
 use function zealphp_mongodb_aggregate;
@@ -458,17 +460,55 @@ class Collection
             return new BSONArray($wrapped);
         }
 
-        // Unwrap extended JSON types from async path (serde_json serialization)
-        if (isset($data['$oid']) && count($data) === 1) {
-            return (string) $data['$oid'];
+        $c = count($data);
+
+        if ($c === 1 && isset($data['$oid'])) {
+            return new ObjectId($data['$oid']);
         }
 
-        if (isset($data['$date']['$numberLong']) && count($data) === 1) {
-            return (int) $data['$date']['$numberLong'];
+        if ($c === 1 && isset($data['$date'])) {
+            if (isset($data['$date']['$numberLong'])) {
+                return new UTCDateTime((int) $data['$date']['$numberLong']);
+            }
+
+            return new UTCDateTime((int) $data['$date']);
         }
 
-        if (isset($data['$numberDecimal']) && count($data) === 1) {
-            return (string) $data['$numberDecimal'];
+        if ($c === 1 && isset($data['$numberDecimal'])) {
+            return new Decimal128($data['$numberDecimal']);
+        }
+
+        if ($c === 1 && isset($data['$binary'])) {
+            return new Binary(
+                base64_decode($data['$binary']['base64'] ?? ''),
+                (int) hexdec($data['$binary']['subType'] ?? '00'),
+            );
+        }
+
+        if ($c === 1 && isset($data['$regularExpression'])) {
+            return new Regex(
+                $data['$regularExpression']['pattern'] ?? '',
+                $data['$regularExpression']['options'] ?? '',
+            );
+        }
+
+        if ($c === 1 && isset($data['$timestamp'])) {
+            return new Timestamp(
+                $data['$timestamp']['i'] ?? 0,
+                $data['$timestamp']['t'] ?? 0,
+            );
+        }
+
+        if (isset($data['$code']) && ($c === 1 || ($c === 2 && isset($data['$scope'])))) {
+            return new Javascript($data['$code'], $data['$scope'] ?? null);
+        }
+
+        if ($c === 1 && isset($data['$minKey'])) {
+            return new MinKey();
+        }
+
+        if ($c === 1 && isset($data['$maxKey'])) {
+            return new MaxKey();
         }
 
         $wrapped = new Document();
