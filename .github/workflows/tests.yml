@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4']
+        php: ['8.2', '8.3', '8.4']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -21,9 +21,8 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: json
           tools: composer:v2
-      - run: composer install --no-interaction --prefer-dist
-        env:
-          COMPOSER_ALLOW_SUPERUSER: 1
+      - run: composer config allow-plugins.dealerdirect/phpcodesniffer-composer-plugin true
+      - run: composer update --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testsuite Unit
 
   integration-tests:
@@ -53,9 +52,8 @@ jobs:
           cargo build --release
           sudo cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_dir');")/zealphp_mongodb.so
           echo "extension=zealphp_mongodb.so" | sudo tee $(php --ini | grep "Scan for" | cut -d: -f2 | tr -d ' ')/99-zealphp-mongodb.ini
-      - run: composer install --no-interaction --prefer-dist
-        env:
-          COMPOSER_ALLOW_SUPERUSER: 1
+      - run: composer config allow-plugins.dealerdirect/phpcodesniffer-composer-plugin true
+      - run: composer update --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testsuite Integration
         env:
           MONGODB_URI: mongodb://localhost:27017
