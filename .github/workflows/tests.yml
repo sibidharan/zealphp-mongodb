@@ -21,7 +21,6 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: json
           tools: composer:v2
-      - run: composer config allow-plugins.dealerdirect/phpcodesniffer-composer-plugin true
       - run: composer update --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testsuite Unit
 
@@ -52,7 +51,6 @@ jobs:
           cargo build --release
           sudo cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_dir');")/zealphp_mongodb.so
           echo "extension=zealphp_mongodb.so" | sudo tee $(php --ini | grep "Scan for" | cut -d: -f2 | tr -d ' ')/99-zealphp-mongodb.ini
-      - run: composer config allow-plugins.dealerdirect/phpcodesniffer-composer-plugin true
       - run: composer update --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testsuite Integration
         env:

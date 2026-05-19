@@ -1,9 +1,17 @@
 {
     "name": "zealphp/mongodb",
-    "description": "Async MongoDB driver for ZealPHP — Rust extension with PHP OOP library, non-blocking via eventfd + OpenSwoole coroutines",
+    "description": "Async MongoDB driver for ZealPHP \u2014 Rust extension with PHP OOP library, non-blocking via eventfd + OpenSwoole coroutines",
     "type": "library",
     "license": "MIT",
-    "keywords": ["mongodb", "async", "rust", "zealphp", "openswoole", "coroutine", "eventfd"],
+    "keywords": [
+        "mongodb",
+        "async",
+        "rust",
+        "zealphp",
+        "openswoole",
+        "coroutine",
+        "eventfd"
+    ],
     "homepage": "https://github.com/sibidharan/zealphp-mongodb",
     "authors": [
         {
@@ -40,14 +48,19 @@
         "check:cs": "phpcs",
         "check:psalm": "psalm --show-info=false --stats",
         "check:rector": "rector --dry-run",
-        "checks": ["@check:cs", "@check:psalm", "@check:rector"],
+        "checks": [
+            "@check:cs",
+            "@check:psalm",
+            "@check:rector"
+        ],
         "fix:cs": "phpcbf",
         "fix:rector": "rector process"
     },
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "dealerdirect/phpcodesniffer-composer-plugin": true
+            "dealerdirect/phpcodesniffer-composer-plugin": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true
         }
     }
 }
