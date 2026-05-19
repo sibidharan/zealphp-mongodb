@@ -194,6 +194,15 @@ class Collection
     public function getDatabaseName(): string { return $this->dbName; }
     public function getNamespace(): string { return $this->dbName . '.' . $this->colName; }
 
+    private ?ReadConcern $readConcern = null;
+    private ?WriteConcern $writeConcern = null;
+    private ?ReadPreference $readPreference = null;
+
+    public function getReadConcern(): ReadConcern { return $this->readConcern ?? new ReadConcern(); }
+    public function getWriteConcern(): WriteConcern { return $this->writeConcern ?? new WriteConcern(1); }
+    public function getReadPreference(): ReadPreference { return $this->readPreference ?? new ReadPreference(ReadPreference::PRIMARY); }
+    public function getTypeMap(): array { return ['root' => 'array', 'document' => 'array', 'array' => 'array']; }
+
     public static function wrapDoc(mixed $data): mixed
     {
         if ($data === null) return null;

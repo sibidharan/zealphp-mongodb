@@ -33,4 +33,13 @@ class Database
     {
         return $this->poolId;
     }
+
+    private ?ReadConcern $readConcern = null;
+    private ?WriteConcern $writeConcern = null;
+    private ?ReadPreference $readPreference = null;
+
+    public function getReadConcern(): ReadConcern { return $this->readConcern ?? new ReadConcern(); }
+    public function getWriteConcern(): WriteConcern { return $this->writeConcern ?? new WriteConcern(1); }
+    public function getReadPreference(): ReadPreference { return $this->readPreference ?? new ReadPreference(ReadPreference::PRIMARY); }
+    public function getTypeMap(): array { return ['root' => 'array', 'document' => 'array', 'array' => 'array']; }
 }
