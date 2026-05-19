@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<psalm
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="https://getpsalm.org/schema/config"
+    xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
+    errorLevel="5"
+    findUnusedBaselineEntry="false"
+    findUnusedCode="false"
+    resolveFromConfigFile="true"
+>
+    <projectFiles>
+        <directory name="php/src"/>
+        <ignoreFiles>
+            <directory name="vendor"/>
+        </ignoreFiles>
+    </projectFiles>
+    <stubs>
+        <file name="stubs/zealphp_mongodb.phpstub"/>
+    </stubs>
+    <issueHandlers>
+        <MissingOverrideAttribute errorLevel="suppress"/>
+        <MissingTemplateParam errorLevel="suppress"/>
+    </issueHandlers>
+</psalm>

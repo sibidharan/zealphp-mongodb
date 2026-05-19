@@ -1,2 +1,6 @@
 /ext/target/
 *.so
+/vendor/
+/.phpcs-cache
+/composer.lock
+/.psalm/
