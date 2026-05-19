@@ -20,6 +20,7 @@ use ZealPHP\MongoDB\BSON\Timestamp;
 use function array_is_list;
 use function array_map;
 use function array_merge;
+use function count;
 use function is_array;
 use function is_object;
 use function zealphp_mongodb_aggregate;
@@ -461,9 +462,11 @@ class Collection
         if (isset($data['$oid']) && count($data) === 1) {
             return (string) $data['$oid'];
         }
+
         if (isset($data['$date']['$numberLong']) && count($data) === 1) {
             return (int) $data['$date']['$numberLong'];
         }
+
         if (isset($data['$numberDecimal']) && count($data) === 1) {
             return (string) $data['$numberDecimal'];
         }

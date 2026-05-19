@@ -20,6 +20,7 @@
     <issueHandlers>
         <MissingOverrideAttribute errorLevel="suppress"/>
         <MissingTemplateParam errorLevel="suppress"/>
+        <MissingDependency errorLevel="suppress"/>
         <UndefinedClass>
             <errorLevel type="suppress">
                 <referencedClass name="MongoDB\BSON\ObjectId"/>
