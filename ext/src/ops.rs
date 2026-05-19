@@ -169,8 +169,17 @@ pub fn create_index(
     }
     let index_model = mongodb::IndexModel::builder().keys(keys).options(idx_opts).build();
     coroutine::run_sync(async move {
-        collection.create_index(index_model).await
-            .map(|r| r.index_name)
+        match collection.create_index(index_model).await {
+            Ok(r) => Ok(r.index_name),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("IndexOptionsConflict") || err_str.contains("already exists") {
+                    Ok("_existing".to_string())
+                } else {
+                    Err(e)
+                }
+            }
+        }
     })
 }
 
