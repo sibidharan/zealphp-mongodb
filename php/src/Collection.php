@@ -176,13 +176,93 @@ class Collection
         return zealphp_mongodb_create_index($this->poolId, $this->dbName, $this->colName, $key, $opts);
     }
 
-    public function listIndexes(array $options = []): array
+    public function insertMany(array $documents, array $options = []): InsertManyResult
     {
-        return [];
+        $docs = array_map(fn($d) => self::prepareBSON((array)$d), $documents);
+        if (AsyncBridge::isCoroutineMode()) {
+            return new InsertManyResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'insert_many', ['__docs' => $docs]) ?? []);
+        }
+        $opts = $options ?: null;
+        return new InsertManyResult(zealphp_mongodb_insert_many($this->poolId, $this->dbName, $this->colName, $docs, $opts));
     }
 
-    public function dropIndex(string $indexName, array $options = []): void
+    public function estimatedDocumentCount(array $options = []): int
     {
+        if (AsyncBridge::isCoroutineMode()) {
+            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'estimated_document_count', []);
+            return $result['count'] ?? 0;
+        }
+        return zealphp_mongodb_estimated_document_count($this->poolId, $this->dbName, $this->colName);
+    }
+
+    public function bulkWrite(array $operations, array $options = []): BulkWriteResult
+    {
+        $results = ['inserted_count' => 0, 'matched_count' => 0, 'modified_count' => 0, 'deleted_count' => 0, 'upserted_count' => 0, 'acknowledged' => true];
+        foreach ($operations as $op) {
+            foreach ($op as $type => $args) {
+                match ($type) {
+                    'insertOne' => (function() use (&$results, $args) { $this->insertOne($args[0] ?? $args); $results['inserted_count']++; })(),
+                    'updateOne' => (function() use (&$results, $args) { $r = $this->updateOne($args[0], $args[1], $args[2] ?? []); $results['matched_count'] += $r->getMatchedCount(); $results['modified_count'] += $r->getModifiedCount(); })(),
+                    'updateMany' => (function() use (&$results, $args) { $r = $this->updateMany($args[0], $args[1], $args[2] ?? []); $results['matched_count'] += $r->getMatchedCount(); $results['modified_count'] += $r->getModifiedCount(); })(),
+                    'deleteOne' => (function() use (&$results, $args) { $r = $this->deleteOne($args[0], $args[1] ?? []); $results['deleted_count'] += $r->getDeletedCount(); })(),
+                    'deleteMany' => (function() use (&$results, $args) { $r = $this->deleteMany($args[0], $args[1] ?? []); $results['deleted_count'] += $r->getDeletedCount(); })(),
+                    'replaceOne' => (function() use (&$results, $args) { $r = $this->replaceOne($args[0], $args[1], $args[2] ?? []); $results['matched_count'] += $r->getMatchedCount(); $results['modified_count'] += $r->getModifiedCount(); })(),
+                    default => null,
+                };
+            }
+        }
+        return new BulkWriteResult($results);
+    }
+
+    public function drop(array $options = []): array
+    {
+        zealphp_mongodb_drop_collection($this->poolId, $this->dbName, $this->colName);
+        return ['ok' => 1];
+    }
+
+    public function rename(string $toCollectionName, ?string $toDatabaseName = null, array $options = []): array
+    {
+        $cmd = ['renameCollection' => $this->dbName . '.' . $this->colName, 'to' => ($toDatabaseName ?? $this->dbName) . '.' . $toCollectionName];
+        zealphp_mongodb_run_command($this->poolId, 'admin', $cmd);
+        $this->colName = $toCollectionName;
+        if ($toDatabaseName) $this->dbName = $toDatabaseName;
+        return ['ok' => 1];
+    }
+
+    public function listIndexes(array $options = []): array
+    {
+        return zealphp_mongodb_list_indexes($this->poolId, $this->dbName, $this->colName);
+    }
+
+    public function dropIndex(string $indexName, array $options = []): array
+    {
+        zealphp_mongodb_drop_index($this->poolId, $this->dbName, $this->colName, $indexName);
+        return ['ok' => 1];
+    }
+
+    public function dropIndexes(array $options = []): array
+    {
+        zealphp_mongodb_drop_indexes($this->poolId, $this->dbName, $this->colName);
+        return ['ok' => 1];
+    }
+
+    public function createIndexes(array $indexes, array $options = []): array
+    {
+        $names = [];
+        foreach ($indexes as $idx) {
+            $key = $idx['key'] ?? [];
+            $idxOpts = $idx;
+            unset($idxOpts['key']);
+            $names[] = $this->createIndex($key, $idxOpts);
+        }
+        return $names;
+    }
+
+    public function withOptions(array $options = []): self
+    {
+        $new = clone $this;
+        $new->options = array_merge($this->options, $options);
+        return $new;
     }
 
     public function count(array|object $filter = [], array $options = []): int
@@ -217,7 +297,7 @@ class Collection
         return $wrapped;
     }
 
-    private static function prepareBSON(mixed $data): mixed
+    public static function prepareBSON(mixed $data): mixed
     {
         if ($data instanceof \MongoDB\BSON\ObjectId) {
             return ['$oid' => (string)$data];

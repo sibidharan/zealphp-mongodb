@@ -55,6 +55,25 @@ class Client
         return $this->poolId;
     }
 
+    public function dropDatabase(string $databaseName, array $options = []): array
+    {
+        zealphp_mongodb_drop_database($this->poolId, $databaseName);
+        return ['ok' => 1];
+    }
+
+    public function startSession(array $options = []): Session
+    {
+        return new Session($this->poolId, $options);
+    }
+
+    public function watch(array $pipeline = [], array $options = []): ChangeStream
+    {
+        return new ChangeStream();
+    }
+
+    public function __toString(): string { return 'mongodb://...'; }
+    public function __debugInfo(): array { return ['poolId' => $this->poolId]; }
+
     private ?ReadConcern $readConcern = null;
     private ?WriteConcern $writeConcern = null;
     private ?ReadPreference $readPreference = null;

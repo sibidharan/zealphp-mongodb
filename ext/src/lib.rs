@@ -47,6 +47,95 @@ pub fn zealphp_mongodb_list_databases(pool_id: i64) -> PhpResult<Zval> {
     Ok(zval)
 }
 
+// --- Options parsing helpers ---
+
+fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
+    let mut fo = mongodb::options::FindOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("limit") { if let Some(n) = v.long() { fo.limit = Some(n); } }
+                if let Some(v) = arr.get("skip") { if let Some(n) = v.long() { fo.skip = Some(n as u64); } }
+                if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
+                if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
+            }
+        }
+    }
+    fo
+}
+
+fn parse_find_one_options(opts: Option<&Zval>) -> mongodb::options::FindOneOptions {
+    let mut fo = mongodb::options::FindOneOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
+                if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
+            }
+        }
+    }
+    fo
+}
+
+fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions {
+    let mut uo = mongodb::options::UpdateOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { uo.upsert = Some(b); } }
+            }
+        }
+    }
+    uo
+}
+
+fn parse_replace_options(opts: Option<&Zval>) -> mongodb::options::ReplaceOptions {
+    let mut ro = mongodb::options::ReplaceOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { ro.upsert = Some(b); } }
+            }
+        }
+    }
+    ro
+}
+
+fn parse_find_one_and_update_options(opts: Option<&Zval>) -> mongodb::options::FindOneAndUpdateOptions {
+    let mut fo = mongodb::options::FindOneAndUpdateOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("returnDocument") {
+                    if let Some(n) = v.long() {
+                        if n == 2 { fo.return_document = Some(mongodb::options::ReturnDocument::After); }
+                    }
+                }
+                if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
+                if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { fo.upsert = Some(b); } }
+            }
+        }
+    }
+    fo
+}
+
+fn parse_find_one_and_replace_options(opts: Option<&Zval>) -> mongodb::options::FindOneAndReplaceOptions {
+    let mut fo = mongodb::options::FindOneAndReplaceOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("returnDocument") {
+                    if let Some(n) = v.long() {
+                        if n == 2 { fo.return_document = Some(mongodb::options::ReturnDocument::After); }
+                    }
+                }
+                if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { fo.upsert = Some(b); } }
+            }
+        }
+    }
+    fo
+}
+
 // --- CRUD operations ---
 
 #[php_function]
@@ -55,11 +144,12 @@ pub fn zealphp_mongodb_find_one(
     db: &str,
     col: &str,
     filter: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let result = ops::find_one(&client, db, col, filter_doc)
+    let fo = parse_find_one_options(opts);
+    let result = ops::find_one_with_options(&client, db, col, filter_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
         Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
@@ -77,11 +167,12 @@ pub fn zealphp_mongodb_find(
     db: &str,
     col: &str,
     filter: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<i64> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let mongo_cursor = ops::find(&client, db, col, filter_doc)
+    let fo = parse_find_options(opts);
+    let mongo_cursor = ops::find_with_options(&client, db, col, filter_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     let cursor_id = cursor::store_cursor(mongo_cursor);
     Ok(cursor_id as i64)
@@ -120,12 +211,13 @@ pub fn zealphp_mongodb_update_one(
     col: &str,
     filter: &Zval,
     update: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
-    let result = ops::update_one(&client, db, col, filter_doc, update_doc)
+    let uo = parse_update_options(opts);
+    let result = ops::update_one_with_options(&client, db, col, filter_doc, update_doc, uo)
         .map_err(|e| PhpException::default(e))?;
     Ok(update_result_to_zval(&result))
 }
@@ -137,12 +229,13 @@ pub fn zealphp_mongodb_update_many(
     col: &str,
     filter: &Zval,
     update: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
-    let result = ops::update_many(&client, db, col, filter_doc, update_doc)
+    let uo = parse_update_options(opts);
+    let result = ops::update_many_with_options(&client, db, col, filter_doc, update_doc, uo)
         .map_err(|e| PhpException::default(e))?;
     Ok(update_result_to_zval(&result))
 }
@@ -184,12 +277,13 @@ pub fn zealphp_mongodb_replace_one(
     col: &str,
     filter: &Zval,
     replacement: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let replacement_doc = bson_convert::php_to_doc(replacement).map_err(|e| PhpException::default(e))?;
-    let result = ops::replace_one(&client, db, col, filter_doc, replacement_doc)
+    let ro = parse_replace_options(opts);
+    let result = ops::replace_one_with_options(&client, db, col, filter_doc, replacement_doc, ro)
         .map_err(|e| PhpException::default(e))?;
     Ok(update_result_to_zval(&result))
 }
@@ -256,12 +350,13 @@ pub fn zealphp_mongodb_find_one_and_update(
     col: &str,
     filter: &Zval,
     update: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
-    let result = ops::find_one_and_update(&client, db, col, filter_doc, update_doc)
+    let fo = parse_find_one_and_update_options(opts);
+    let result = ops::find_one_and_update_with_options(&client, db, col, filter_doc, update_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
         Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
@@ -302,12 +397,13 @@ pub fn zealphp_mongodb_find_one_and_replace(
     col: &str,
     filter: &Zval,
     replacement: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
     let replacement_doc = bson_convert::php_to_doc(replacement).map_err(|e| PhpException::default(e))?;
-    let result = ops::find_one_and_replace(&client, db, col, filter_doc, replacement_doc)
+    let fo = parse_find_one_and_replace_options(opts);
+    let result = ops::find_one_and_replace_with_options(&client, db, col, filter_doc, replacement_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
         Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
@@ -358,6 +454,112 @@ pub fn zealphp_mongodb_cursor_next(cursor_id: i64) -> PhpResult<Zval> {
 #[php_function]
 pub fn zealphp_mongodb_cursor_close(cursor_id: i64) -> PhpResult<()> {
     cursor::remove(cursor_id as u64).map_err(|e| PhpException::default(e))
+}
+
+// --- New collection/database operations ---
+
+#[php_function]
+pub fn zealphp_mongodb_insert_many(
+    pool_id: i64, db: &str, col: &str, documents: &Zval, _opts: Option<&Zval>,
+) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let docs_arr = documents.array().ok_or_else(|| PhpException::default("Expected array of documents".to_string()))?;
+    let mut docs = Vec::new();
+    for (_, val) in docs_arr.iter() {
+        docs.push(bson_convert::php_to_doc(val).map_err(|e| PhpException::default(e))?);
+    }
+    let result = ops::insert_many(&client, db, col, docs).map_err(|e| PhpException::default(e))?;
+
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut ids_ht = ZendHashTable::new();
+    for (i, (_k, id)) in result.inserted_ids.iter().enumerate() {
+        let _ = ids_ht.insert_at_index(i as u64, bson_convert::bson_to_zval(id));
+    }
+    let mut ids_z = Zval::new();
+    ids_z.set_hashtable(ids_ht);
+    let _ = ht.insert("inserted_ids", ids_z);
+    let mut count = Zval::new();
+    count.set_long(result.inserted_ids.len() as i64);
+    let _ = ht.insert("inserted_count", count);
+    let mut ack = Zval::new();
+    ack.set_bool(true);
+    let _ = ht.insert("acknowledged", ack);
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_estimated_document_count(pool_id: i64, db: &str, col: &str) -> PhpResult<i64> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let count = ops::estimated_document_count(&client, db, col).map_err(|e| PhpException::default(e))?;
+    Ok(count as i64)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_drop_collection(pool_id: i64, db: &str, col: &str) -> PhpResult<()> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    ops::drop_collection(&client, db, col).map_err(|e| PhpException::default(e))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_list_indexes(pool_id: i64, db: &str, col: &str) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let indexes = ops::list_indexes(&client, db, col).map_err(|e| PhpException::default(e))?;
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for (i, doc) in indexes.iter().enumerate() {
+        let _ = ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+    }
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_drop_index(pool_id: i64, db: &str, col: &str, index_name: &str) -> PhpResult<()> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    ops::drop_index(&client, db, col, index_name).map_err(|e| PhpException::default(e))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_drop_indexes(pool_id: i64, db: &str, col: &str) -> PhpResult<()> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    ops::drop_indexes(&client, db, col).map_err(|e| PhpException::default(e))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_run_command(pool_id: i64, db: &str, command: &Zval) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let cmd = bson_convert::php_to_doc(command).map_err(|e| PhpException::default(e))?;
+    let result = ops::run_command(&client, db, cmd).map_err(|e| PhpException::default(e))?;
+    Ok(bson_convert::doc_to_php(&result))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_create_collection(pool_id: i64, db: &str, name: &str) -> PhpResult<()> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    ops::create_collection(&client, db, name).map_err(|e| PhpException::default(e))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_drop_database(pool_id: i64, db: &str) -> PhpResult<()> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    ops::drop_database(&client, db).map_err(|e| PhpException::default(e))
+}
+
+#[php_function]
+pub fn zealphp_mongodb_list_collection_names(pool_id: i64, db: &str) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let names = ops::list_collection_names(&client, db).map_err(|e| PhpException::default(e))?;
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for (i, name) in names.iter().enumerate() {
+        let mut v = Zval::new();
+        let _ = v.set_string(name, false);
+        let _ = ht.insert_at_index(i as u64, v);
+    }
+    zval.set_hashtable(ht);
+    Ok(zval)
 }
 
 // --- CENTRALIZED ASYNC API ---

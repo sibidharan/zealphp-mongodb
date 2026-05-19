@@ -234,6 +234,38 @@ pub async fn exec_async(
                 Err(e) => error_json(&e.to_string()),
             }
         }
+        "insert_many" => {
+            let docs_bson = filter_or_doc.map(|d| {
+                d.get_array("__docs").ok().map(|arr| {
+                    arr.iter().filter_map(|v| {
+                        if let bson::Bson::Document(doc) = v { Some(doc.clone()) } else { None }
+                    }).collect::<Vec<_>>()
+                }).unwrap_or_default()
+            }).unwrap_or_default();
+            match collection.insert_many(docs_bson).await {
+                Ok(r) => {
+                    let ids: Vec<String> = r.inserted_ids.iter().map(|(_, id)| {
+                        format!("\"{}\"", bson_id_to_string(id))
+                    }).collect();
+                    format!("{{\"inserted_ids\":[{}],\"acknowledged\":true,\"inserted_count\":{}}}", ids.join(","), r.inserted_ids.len())
+                }
+                Err(e) => error_json(&e.to_string()),
+            }
+        }
+        "estimated_document_count" => {
+            match collection.estimated_document_count().await {
+                Ok(n) => format!("{{\"count\":{}}}", n),
+                Err(e) => error_json(&e.to_string()),
+            }
+        }
+        "run_command" => {
+            let cmd = filter_or_doc.unwrap_or_default();
+            let database = client.database(&db);
+            match database.run_command(cmd).await {
+                Ok(doc) => doc_to_json(&doc),
+                Err(e) => error_json(&e.to_string()),
+            }
+        }
         _ => error_json(&format!("Unknown operation: {}", op)),
     }
 }
