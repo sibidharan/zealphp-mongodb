@@ -1,6 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit;
 
+use Iterator;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\ChangeStream;
 
@@ -17,6 +21,6 @@ class ChangeStreamTest extends TestCase
     public function testImplementsIterator(): void
     {
         $cs = new ChangeStream();
-        $this->assertInstanceOf(\Iterator::class, $cs);
+        $this->assertInstanceOf(Iterator::class, $cs);
     }
 }

@@ -1,5 +1,31 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
+
+use OpenSwoole\Coroutine;
+use OpenSwoole\Coroutine\Channel;
+use OpenSwoole\Event;
+
+use function class_exists;
+use function json_decode;
+use function zealphp_mongodb_async_result;
+use function zealphp_mongodb_close_efd;
+use function zealphp_mongodb_count_documents;
+use function zealphp_mongodb_delete_many;
+use function zealphp_mongodb_delete_one;
+use function zealphp_mongodb_distinct;
+use function zealphp_mongodb_exec_async;
+use function zealphp_mongodb_find;
+use function zealphp_mongodb_find_one;
+use function zealphp_mongodb_find_one_and_delete;
+use function zealphp_mongodb_find_one_and_replace;
+use function zealphp_mongodb_find_one_and_update;
+use function zealphp_mongodb_insert_one;
+use function zealphp_mongodb_replace_one;
+use function zealphp_mongodb_update_many;
+use function zealphp_mongodb_update_one;
 
 class AsyncBridge
 {
@@ -7,33 +33,38 @@ class AsyncBridge
     {
         return class_exists('\OpenSwoole\Coroutine')
             && class_exists('\OpenSwoole\Event')
-            && \OpenSwoole\Coroutine::getCid() >= 0;
+            && Coroutine::getCid() >= 0;
     }
 
     public static function exec(
-        int $poolId, string $db, string $col, string $op,
-        array $filterOrDoc = [], ?array $updateOrPipeline = null
+        int $poolId,
+        string $db,
+        string $col,
+        string $op,
+        array $filterOrDoc = [],
+        array|null $updateOrPipeline = null,
     ): mixed {
-        if (!self::isCoroutineMode()) {
+        if (! self::isCoroutineMode()) {
             return self::execSync($poolId, $db, $col, $op, $filterOrDoc, $updateOrPipeline);
         }
 
         $async = zealphp_mongodb_exec_async($poolId, $db, $col, $op, $filterOrDoc, $updateOrPipeline);
         $efd = $async['efd'];
         $taskId = $async['task_id'];
-        $chan = new \OpenSwoole\Coroutine\Channel(1);
+        $chan = new Channel(1);
 
-        \OpenSwoole\Event::add($efd, function ($fd) use ($chan, $taskId, $efd) {
+        Event::add($efd, static function ($fd) use ($chan, $taskId, $efd) {
             $json = zealphp_mongodb_async_result($taskId);
-            \OpenSwoole\Event::del($efd);
+            Event::del($efd);
             zealphp_mongodb_close_efd($efd);
             $chan->push($json);
         });
 
         $json = $chan->pop(30.0);
         if ($json === false) {
-            \OpenSwoole\Event::del($efd);
+            Event::del($efd);
             zealphp_mongodb_close_efd($efd);
+
             throw new Exception\RuntimeException("MongoDB async timeout for $op");
         }
 
@@ -41,10 +72,15 @@ class AsyncBridge
     }
 
     private static function execSync(
-        int $poolId, string $db, string $col, string $op,
-        array $filterOrDoc, ?array $updateOrPipeline
+        int $poolId,
+        string $db,
+        string $col,
+        string $op,
+        array $filterOrDoc,
+        array|null $updateOrPipeline,
     ): mixed {
         $opts = null;
+
         return match ($op) {
             'find_one' => zealphp_mongodb_find_one($poolId, $db, $col, $filterOrDoc, $opts),
             'find' => self::findSync($poolId, $db, $col, $filterOrDoc, $updateOrPipeline),
@@ -63,7 +99,7 @@ class AsyncBridge
         };
     }
 
-    private static function findSync(int $poolId, string $db, string $col, array $filter, ?array $options): array
+    private static function findSync(int $poolId, string $db, string $col, array $filter, array|null $options): array
     {
         $opts = $options ?: null;
         $cursorId = zealphp_mongodb_find($poolId, $db, $col, $filter, $opts);
@@ -72,6 +108,7 @@ class AsyncBridge
         foreach ($cursor as $doc) {
             $results[] = $doc;
         }
+
         return $results;
     }
 
@@ -80,6 +117,7 @@ class AsyncBridge
         $fieldName = $filterWithField['__field'] ?? '';
         unset($filterWithField['__field']);
         $opts = null;
+
         return zealphp_mongodb_distinct($poolId, $db, $col, $fieldName, $filterWithField, $opts);
     }
 }

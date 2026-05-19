@@ -1,5 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
 
 /**
  * BSON Int64 type.
@@ -7,21 +13,19 @@ namespace ZealPHP\MongoDB\BSON;
  * Represents a 64-bit integer. On 64-bit platforms PHP natively handles
  * 64-bit integers, but this class allows explicit typing for BSON serialization.
  */
-class Int64 implements \JsonSerializable, Type, \Stringable
+class Int64 implements JsonSerializable, Type, Stringable
 {
-    private int $value;
+    private readonly int $value;
 
-    /**
-     * @param int|string $value A 64-bit integer value.
-     */
+    /** @param int|string $value A 64-bit integer value. */
     public function __construct(int|string $value)
     {
-        $this->value = (int)$value;
+        $this->value = (int) $value;
     }
 
     public function __toString(): string
     {
-        return (string)$this->value;
+        return (string) $this->value;
     }
 
     public function jsonSerialize(): mixed

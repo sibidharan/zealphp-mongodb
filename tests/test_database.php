@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Database API Tests
  *
@@ -10,23 +13,41 @@
 // Preload ExceptionInterface (defined in Exception.php, not its own file)
 require_once __DIR__ . '/../php/src/Exception/Exception.php';
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
+use ZealPHP\MongoDB\ArrayCursor;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Database;
+use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\GridFS\Bucket;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 $client = new Client('mongodb://db.selfmade.ninja:27017');
@@ -38,7 +59,7 @@ echo "=== command (ping) ===\n";
 
 $pingResult = $db->command(['ping' => 1]);
 check('ping returns array', is_array($pingResult));
-check('ping ok is 1', ($pingResult['ok'] ?? 0) == 1);
+check('ping ok is 1', ($pingResult['ok'] ?? 0) === 1);
 
 // ============================================================
 echo "\n=== createCollection / dropCollection ===\n";
@@ -50,7 +71,7 @@ check('createCollection: collection appears in list', in_array('test_db_create_c
 
 $db->dropCollection('test_db_create_col');
 $namesAfter = $db->listCollectionNames();
-check('dropCollection: collection gone from list', !in_array('test_db_create_col', $namesAfter));
+check('dropCollection: collection gone from list', ! in_array('test_db_create_col', $namesAfter));
 
 // ============================================================
 echo "\n=== listCollectionNames ===\n";
@@ -86,6 +107,7 @@ foreach ($collections as $c) {
         break;
     }
 }
+
 check('listCollections includes test_db_listfull', $found);
 
 $db->dropCollection('test_db_listfull');
@@ -106,7 +128,7 @@ check('temp db exists before drop', in_array($tempDbName, $dbNames));
 $tempDb->drop();
 
 $dbNamesAfter = $client->listDatabaseNames();
-check('temp db gone after drop', !in_array($tempDbName, $dbNamesAfter));
+check('temp db gone after drop', ! in_array($tempDbName, $dbNamesAfter));
 
 // ============================================================
 echo "\n=== aggregate (database-level) ===\n";
@@ -117,13 +139,14 @@ $cursor = $db->aggregate([
     ['$documents' => [['x' => 1], ['x' => 2], ['x' => 3]]],
     ['$match' => ['x' => ['$gte' => 2]]],
 ]);
-check('database aggregate returns ArrayCursor', $cursor instanceof \ZealPHP\MongoDB\ArrayCursor);
+check('database aggregate returns ArrayCursor', $cursor instanceof ArrayCursor);
 check('database aggregate is iterable', is_iterable($cursor));
 
 $aggResults = [];
 foreach ($cursor as $doc) {
     $aggResults[] = $doc;
 }
+
 check('database aggregate returned 2 docs (x>=2)', count($aggResults) === 2);
 
 // ============================================================
@@ -139,17 +162,19 @@ check('bucket getDatabaseName matches', $bucket->getDatabaseName() === 'zealphp_
 $threw = false;
 try {
     $bucket->openUploadStream('test.txt');
-} catch (\ZealPHP\MongoDB\Exception\RuntimeException $e) {
+} catch (RuntimeException $e) {
     $threw = true;
 }
+
 check('bucket openUploadStream throws RuntimeException', $threw);
 
 $threw = false;
 try {
     $bucket->drop();
-} catch (\ZealPHP\MongoDB\Exception\RuntimeException $e) {
+} catch (RuntimeException $e) {
     $threw = true;
 }
+
 check('bucket drop throws RuntimeException', $threw);
 
 // Custom bucket name
@@ -169,7 +194,7 @@ check('withOptions preserves database name', $db2->getDatabaseName() === $db->ge
 echo "\n=== __toString ===\n";
 // ============================================================
 
-$str = (string)$db;
+$str = (string) $db;
 check('__toString returns database name', $str === 'zealphp_test');
 
 // ============================================================
@@ -186,6 +211,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

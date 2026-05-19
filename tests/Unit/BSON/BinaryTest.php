@@ -1,10 +1,15 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\BSON\Binary;
 use ZealPHP\MongoDB\BSON\BinaryInterface;
 use ZealPHP\MongoDB\BSON\Type;
+
+use function random_bytes;
 
 class BinaryTest extends TestCase
 {

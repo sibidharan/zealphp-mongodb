@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;

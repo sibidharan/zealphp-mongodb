@@ -1,22 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Exception;
+
+use Throwable;
 
 class CommandException extends ServerException
 {
-    private ?object $resultDocument;
-
     public function __construct(
         string $message = '',
         int $code = 0,
-        ?\Throwable $previous = null,
-        ?object $resultDocument = null,
+        Throwable|null $previous = null,
+        private readonly object|null $resultDocument = null,
     ) {
         parent::__construct($message, $code, $previous);
-        $this->resultDocument = $resultDocument;
     }
 
-    public function getResultDocument(): ?object
+    public function getResultDocument(): object|null
     {
         return $this->resultDocument;
     }

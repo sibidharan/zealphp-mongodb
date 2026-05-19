@@ -1,6 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\BSON\Document;
 
@@ -36,14 +40,14 @@ class DocumentTest extends TestCase
     public function testImmutableSet(): void
     {
         $doc = Document::fromPHP(['a' => 1]);
-        $this->expectException(\LogicException::class);
+        $this->expectException(LogicException::class);
         $doc['a'] = 2;
     }
 
     public function testImmutableUnset(): void
     {
         $doc = Document::fromPHP(['a' => 1]);
-        $this->expectException(\LogicException::class);
+        $this->expectException(LogicException::class);
         unset($doc['a']);
     }
 
@@ -57,7 +61,10 @@ class DocumentTest extends TestCase
     {
         $doc = Document::fromPHP(['x' => 1, 'y' => 2]);
         $keys = [];
-        foreach ($doc as $k => $v) { $keys[] = $k; }
+        foreach ($doc as $k => $v) {
+            $keys[] = $k;
+        }
+
         $this->assertSame(['x', 'y'], $keys);
     }
 }

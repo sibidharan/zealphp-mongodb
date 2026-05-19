@@ -1,5 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
 
 /**
  * BSON MaxKey type.
@@ -7,7 +12,7 @@ namespace ZealPHP\MongoDB\BSON;
  * Represents the BSON MaxKey value, which compares greater than
  * all other possible BSON element values.
  */
-class MaxKey implements \JsonSerializable, Type
+class MaxKey implements JsonSerializable, Type
 {
     public function jsonSerialize(): mixed
     {

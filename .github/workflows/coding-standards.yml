@@ -17,6 +17,8 @@ jobs:
           php-version: '8.2'
           tools: composer:v2, cs2pr
       - run: composer install --no-interaction --prefer-dist
+        env:
+          COMPOSER_ALLOW_SUPERUSER: 1
       - run: vendor/bin/phpcs -q --no-colors --report=checkstyle | cs2pr
 
   rector:
@@ -29,4 +31,6 @@ jobs:
           php-version: '8.2'
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist
+        env:
+          COMPOSER_ALLOW_SUPERUSER: 1
       - run: vendor/bin/rector --ansi --dry-run

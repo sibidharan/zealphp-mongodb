@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
 
 /**
@@ -14,7 +17,7 @@ interface JavascriptInterface
     /**
      * Returns the Javascript's scope document, if any.
      */
-    public function getScope(): ?object;
+    public function getScope(): object|null;
 
     /**
      * Returns the Javascript's code.

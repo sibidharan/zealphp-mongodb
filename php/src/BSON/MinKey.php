@@ -1,5 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
 
 /**
  * BSON MinKey type.
@@ -7,7 +12,7 @@ namespace ZealPHP\MongoDB\BSON;
  * Represents the BSON MinKey value, which compares less than
  * all other possible BSON element values.
  */
-class MinKey implements \JsonSerializable, Type
+class MinKey implements JsonSerializable, Type
 {
     public function jsonSerialize(): mixed
     {

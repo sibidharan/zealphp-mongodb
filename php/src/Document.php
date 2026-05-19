@@ -1,11 +1,17 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
 
-class Document extends \ArrayObject implements \JsonSerializable
+use ArrayObject;
+use JsonSerializable;
+
+class Document extends ArrayObject implements JsonSerializable
 {
     public function __construct(array $data = [])
     {
-        parent::__construct($data, \ArrayObject::ARRAY_AS_PROPS);
+        parent::__construct($data, ArrayObject::ARRAY_AS_PROPS);
     }
 
     public function getArrayCopy(): array
@@ -14,6 +20,7 @@ class Document extends \ArrayObject implements \JsonSerializable
         foreach (parent::getArrayCopy() as $key => $value) {
             $result[$key] = $value instanceof self ? $value->getArrayCopy() : $value;
         }
+
         return $result;
     }
 

@@ -1,67 +1,81 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use DateTime;
+use DateTimeImmutable;
+use DateTimeInterface;
+use JsonSerializable;
+use Stringable;
+
+use function microtime;
+use function sprintf;
 
 /**
  * BSON UTCDateTime type.
  *
  * Represents a UTC date and time value with millisecond precision.
  */
-class UTCDateTime implements UTCDateTimeInterface, \JsonSerializable, Type, \Stringable
+class UTCDateTime implements UTCDateTimeInterface, JsonSerializable, Type, Stringable
 {
     private int $milliseconds;
 
     /**
-     * @param int|float|string|\DateTimeInterface|null $milliseconds Milliseconds since epoch,
+     * @param int|float|string|DateTimeInterface|null $milliseconds Milliseconds since epoch,
      *        a DateTimeInterface, or null for current time.
      */
-    public function __construct(int|float|string|\DateTimeInterface|null $milliseconds = null)
+    public function __construct(int|float|string|DateTimeInterface|null $milliseconds = null)
     {
-        if ($milliseconds instanceof \DateTimeInterface) {
+        if ($milliseconds instanceof DateTimeInterface) {
             // Convert DateTimeInterface to milliseconds
-            $this->milliseconds = (int)($milliseconds->format('U') * 1000
-                + (int)$milliseconds->format('v'));
+            $this->milliseconds = (int) ($milliseconds->format('U') * 1000
+                + (int) $milliseconds->format('v'));
         } elseif ($milliseconds !== null) {
-            $this->milliseconds = (int)$milliseconds;
+            $this->milliseconds = (int) $milliseconds;
         } else {
-            $this->milliseconds = (int)(microtime(true) * 1000);
+            $this->milliseconds = (int) (microtime(true) * 1000);
         }
     }
 
     /**
      * Returns a mutable DateTime representation.
      */
-    public function toDateTime(): \DateTime
+    public function toDateTime(): DateTime
     {
-        $dt = \DateTime::createFromFormat('U.u', sprintf('%.3f', $this->milliseconds / 1000));
+        $dt = DateTime::createFromFormat('U.u', sprintf('%.3f', $this->milliseconds / 1000));
         if ($dt === false) {
             // Fallback for edge cases
-            $dt = new \DateTime();
-            $dt->setTimestamp((int)($this->milliseconds / 1000));
+            $dt = new DateTime();
+            $dt->setTimestamp((int) ($this->milliseconds / 1000));
         }
+
         return $dt;
     }
 
     /**
      * Returns an immutable DateTimeImmutable representation.
      */
-    public function toDateTimeImmutable(): \DateTimeImmutable
+    public function toDateTimeImmutable(): DateTimeImmutable
     {
-        $dt = \DateTimeImmutable::createFromFormat('U.u', sprintf('%.3f', $this->milliseconds / 1000));
+        $dt = DateTimeImmutable::createFromFormat('U.u', sprintf('%.3f', $this->milliseconds / 1000));
         if ($dt === false) {
-            $dt = new \DateTimeImmutable();
-            $dt = $dt->setTimestamp((int)($this->milliseconds / 1000));
+            $dt = new DateTimeImmutable();
+            $dt = $dt->setTimestamp((int) ($this->milliseconds / 1000));
         }
+
         return $dt;
     }
 
     public function __toString(): string
     {
-        return (string)$this->milliseconds;
+        return (string) $this->milliseconds;
     }
 
     public function jsonSerialize(): mixed
     {
-        return ['$date' => ['$numberLong' => (string)$this->milliseconds]];
+        return ['$date' => ['$numberLong' => (string) $this->milliseconds]];
     }
 
     /**

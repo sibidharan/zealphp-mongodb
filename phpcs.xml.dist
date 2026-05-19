@@ -22,5 +22,22 @@
         <exclude name="SlevomatCodingStandard.Classes.SuperfluousAbstractClassNaming"/>
         <exclude name="Generic.Formatting.MultipleStatementAlignment"/>
         <exclude name="Squiz.Commenting.FunctionComment"/>
+        <exclude name="SlevomatCodingStandard.TypeHints.ParameterTypeHint.MissingTraversableTypeHintSpecification"/>
+        <exclude name="SlevomatCodingStandard.TypeHints.ReturnTypeHint.MissingTraversableTypeHintSpecification"/>
+        <exclude name="Squiz.Strings.DoubleQuoteUsage.ContainsVar"/>
+        <exclude name="Generic.Files.LineLength.TooLong"/>
+        <exclude name="SlevomatCodingStandard.TypeHints.ParameterTypeHint.MissingAnyTypeHint"/>
+        <exclude name="Squiz.NamingConventions.ValidVariableName.MemberNotCamelCaps"/>
+    </rule>
+
+    <!-- Tests use global functions and side effects -->
+    <rule ref="Squiz.Functions.GlobalFunction.Found">
+        <exclude-pattern>tests/</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.PHP.GlobalKeyword.NotAllowed">
+        <exclude-pattern>tests/</exclude-pattern>
+    </rule>
+    <rule ref="PSR1.Files.SideEffects.FoundWithSymbols">
+        <exclude-pattern>tests/</exclude-pattern>
     </rule>
 </ruleset>

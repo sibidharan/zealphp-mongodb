@@ -1,25 +1,31 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
+
+use function is_array;
 
 /**
  * BSON Javascript type.
  *
  * Represents a JavaScript code string, optionally with a scope document.
  */
-class Javascript implements JavascriptInterface, \JsonSerializable, Type, \Stringable
+class Javascript implements JavascriptInterface, JsonSerializable, Type, Stringable
 {
-    private string $code;
-    private ?object $scope;
+    private object|null $scope;
 
     /**
      * @param string $code JavaScript code string.
      * @param array|object|null $scope Optional scope document for the code.
      */
-    public function __construct(string $code, array|object|null $scope = null)
+    public function __construct(private readonly string $code, array|object|null $scope = null)
     {
-        $this->code = $code;
         if (is_array($scope)) {
-            $this->scope = (object)$scope;
+            $this->scope = (object) $scope;
         } else {
             $this->scope = $scope;
         }
@@ -30,7 +36,7 @@ class Javascript implements JavascriptInterface, \JsonSerializable, Type, \Strin
         return $this->code;
     }
 
-    public function getScope(): ?object
+    public function getScope(): object|null
     {
         return $this->scope;
     }
@@ -46,6 +52,7 @@ class Javascript implements JavascriptInterface, \JsonSerializable, Type, \Strin
         if ($this->scope !== null) {
             $result['$scope'] = $this->scope;
         }
+
         return $result;
     }
 

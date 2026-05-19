@@ -1,7 +1,29 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
 
+use ArrayAccess;
+use ArrayIterator;
+use Countable;
+use InvalidArgumentException;
+use IteratorAggregate;
 use LogicException;
+use OutOfRangeException;
+use Stringable;
+
+use function array_key_exists;
+use function count;
+use function is_object;
+use function json_decode;
+use function json_encode;
+use function json_last_error;
+use function json_last_error_msg;
+
+use const JSON_ERROR_NONE;
+use const JSON_UNESCAPED_SLASHES;
+use const JSON_UNESCAPED_UNICODE;
 
 /**
  * BSON Document type.
@@ -9,16 +31,13 @@ use LogicException;
  * Represents an immutable BSON document. Created via static factories.
  * Provides array-like access (read-only) and JSON serialization.
  */
-class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \Countable
+class Document implements IteratorAggregate, ArrayAccess, Type, Stringable, Countable
 {
-    private array $data;
-
     /**
      * Private constructor -- use fromPHP() or fromJSON().
      */
-    private function __construct(array $data)
+    private function __construct(private array $data)
     {
-        $this->data = $data;
     }
 
     /**
@@ -27,37 +46,40 @@ class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \
     public static function fromPHP(array|object $value): self
     {
         if (is_object($value)) {
-            $value = (array)$value;
+            $value = (array) $value;
         }
+
         return new self($value);
     }
 
     /**
      * Creates a Document from a JSON string.
      *
-     * @throws \InvalidArgumentException if the JSON is invalid
+     * @throws InvalidArgumentException if the JSON is invalid
      */
     public static function fromJSON(string $json): self
     {
         $data = json_decode($json, true);
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-            throw new \InvalidArgumentException(
-                'Error decoding JSON: ' . json_last_error_msg()
+            throw new InvalidArgumentException(
+                'Error decoding JSON: ' . json_last_error_msg(),
             );
         }
+
         return new self($data ?? []);
     }
 
     /**
      * Returns the value for a given key.
      *
-     * @throws \OutOfRangeException if the key does not exist
+     * @throws OutOfRangeException if the key does not exist
      */
     public function get(string $key): mixed
     {
-        if (!array_key_exists($key, $this->data)) {
-            throw new \OutOfRangeException("Key \"$key\" not found in document");
+        if (! array_key_exists($key, $this->data)) {
+            throw new OutOfRangeException("Key \"$key\" not found in document");
         }
+
         return $this->data[$key];
     }
 
@@ -74,7 +96,7 @@ class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \
      */
     public function toPHP(): object
     {
-        return (object)$this->data;
+        return (object) $this->data;
     }
 
     /**
@@ -82,7 +104,7 @@ class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \
      */
     public function toCanonicalExtendedJSON(): string
     {
-        return json_encode($this->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return (string) json_encode($this->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /**
@@ -90,7 +112,7 @@ class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \
      */
     public function toRelaxedExtendedJSON(): string
     {
-        return json_encode($this->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return (string) json_encode($this->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     public function __toString(): string
@@ -103,9 +125,9 @@ class Document implements \IteratorAggregate, \ArrayAccess, Type, \Stringable, \
         return count($this->data);
     }
 
-    public function getIterator(): \ArrayIterator
+    public function getIterator(): ArrayIterator
     {
-        return new \ArrayIterator($this->data);
+        return new ArrayIterator($this->data);
     }
 
     // ArrayAccess (read-only)

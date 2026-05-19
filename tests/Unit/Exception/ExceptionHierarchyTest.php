@@ -1,18 +1,19 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\Exception;
 
 use PHPUnit\Framework\TestCase;
-use ZealPHP\MongoDB\Exception\ExceptionInterface;
-use ZealPHP\MongoDB\Exception\RuntimeException;
-use ZealPHP\MongoDB\Exception\ConnectionException;
 use ZealPHP\MongoDB\Exception\AuthenticationException;
-use ZealPHP\MongoDB\Exception\ConnectionTimeoutException;
-use ZealPHP\MongoDB\Exception\ServerException;
-use ZealPHP\MongoDB\Exception\CommandException;
-use ZealPHP\MongoDB\Exception\ExecutionTimeoutException;
 use ZealPHP\MongoDB\Exception\BulkWriteException;
-use ZealPHP\MongoDB\Exception\LogicException;
+use ZealPHP\MongoDB\Exception\CommandException;
+use ZealPHP\MongoDB\Exception\ConnectionException;
+use ZealPHP\MongoDB\Exception\ExceptionInterface;
 use ZealPHP\MongoDB\Exception\InvalidArgumentException;
+use ZealPHP\MongoDB\Exception\LogicException;
+use ZealPHP\MongoDB\Exception\RuntimeException;
+use ZealPHP\MongoDB\Exception\ServerException;
 use ZealPHP\MongoDB\Exception\UnexpectedValueException;
 
 class ExceptionHierarchyTest extends TestCase
@@ -41,14 +42,14 @@ class ExceptionHierarchyTest extends TestCase
 
     public function testCommandExceptionResultDocument(): void
     {
-        $result = (object)['ok' => 0, 'errmsg' => 'fail'];
+        $result = (object) ['ok' => 0, 'errmsg' => 'fail'];
         $e = new CommandException('fail', 59, null, $result);
         $this->assertSame($result, $e->getResultDocument());
     }
 
     public function testBulkWriteExceptionWriteResult(): void
     {
-        $wr = (object)['nInserted' => 0];
+        $wr = (object) ['nInserted' => 0];
         $e = new BulkWriteException('fail', 0, null, $wr);
         $this->assertSame($wr, $e->getWriteResult());
     }

@@ -1,5 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
 
 /**
  * BSON Timestamp type.
@@ -10,10 +16,10 @@ namespace ZealPHP\MongoDB\BSON;
  * Note: The constructor takes (increment, timestamp) -- increment FIRST,
  * matching the official MongoDB PHP driver convention.
  */
-class Timestamp implements TimestampInterface, \JsonSerializable, Type, \Stringable
+class Timestamp implements TimestampInterface, JsonSerializable, Type, Stringable
 {
-    private int $increment;
-    private int $timestamp;
+    private readonly int $increment;
+    private readonly int $timestamp;
 
     /**
      * @param int|string $increment The increment component.
@@ -21,8 +27,8 @@ class Timestamp implements TimestampInterface, \JsonSerializable, Type, \Stringa
      */
     public function __construct(int|string $increment, int|string $timestamp)
     {
-        $this->increment = (int)$increment;
-        $this->timestamp = (int)$timestamp;
+        $this->increment = (int) $increment;
+        $this->timestamp = (int) $timestamp;
     }
 
     public function getTimestamp(): int

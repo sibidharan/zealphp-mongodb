@@ -1,20 +1,21 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
 
 /**
  * BSON Regex type.
  *
  * Represents a regular expression pattern and optional flags.
  */
-class Regex implements RegexInterface, \JsonSerializable, Type, \Stringable
+class Regex implements RegexInterface, JsonSerializable, Type, Stringable
 {
-    private string $pattern;
-    private string $flags;
-
-    public function __construct(string $pattern, string $flags = '')
+    public function __construct(private readonly string $pattern, private readonly string $flags = '')
     {
-        $this->pattern = $pattern;
-        $this->flags = $flags;
     }
 
     public function getPattern(): string

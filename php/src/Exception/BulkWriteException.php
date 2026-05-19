@@ -1,22 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Exception;
+
+use Throwable;
 
 class BulkWriteException extends ServerException
 {
-    private ?object $writeResult;
-
     public function __construct(
         string $message = '',
         int $code = 0,
-        ?\Throwable $previous = null,
-        ?object $writeResult = null,
+        Throwable|null $previous = null,
+        private readonly object|null $writeResult = null,
     ) {
         parent::__construct($message, $code, $previous);
-        $this->writeResult = $writeResult;
     }
 
-    public function getWriteResult(): ?object
+    public function getWriteResult(): object|null
     {
         return $this->writeResult;
     }

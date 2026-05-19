@@ -1,10 +1,13 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\ReadConcern;
-use ZealPHP\MongoDB\WriteConcern;
 use ZealPHP\MongoDB\ReadPreference;
+use ZealPHP\MongoDB\WriteConcern;
 
 class ConcernTest extends TestCase
 {

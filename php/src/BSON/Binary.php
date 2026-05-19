@@ -1,12 +1,24 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
+
+use function base64_encode;
+use function dechex;
+use function str_pad;
+
+use const STR_PAD_LEFT;
 
 /**
  * BSON Binary type.
  *
  * Represents arbitrary binary data with an associated subtype.
  */
-class Binary implements BinaryInterface, \JsonSerializable, Type, \Stringable
+class Binary implements BinaryInterface, JsonSerializable, Type, Stringable
 {
     public const TYPE_GENERIC      = 0;
     public const TYPE_FUNCTION     = 1;
@@ -20,13 +32,8 @@ class Binary implements BinaryInterface, \JsonSerializable, Type, \Stringable
     public const TYPE_VECTOR       = 9;
     public const TYPE_USER_DEFINED = 128;
 
-    private string $data;
-    private int $type;
-
-    public function __construct(string $data, int $type = self::TYPE_GENERIC)
+    public function __construct(private readonly string $data, private readonly int $type = self::TYPE_GENERIC)
     {
-        $this->data = $data;
-        $this->type = $type;
     }
 
     public function getData(): string

@@ -1,5 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use stdClass;
 
 /**
  * Classes implementing this interface may return data to be serialized
@@ -10,5 +15,5 @@ interface Serializable extends Type
     /**
      * Provides an array or document to serialize as BSON.
      */
-    public function bsonSerialize(): array|\stdClass;
+    public function bsonSerialize(): array|stdClass;
 }

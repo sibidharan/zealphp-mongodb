@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Concerns Tests
  *
@@ -6,24 +9,40 @@
  * plus Client/Database/Collection concern accessors.
  */
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
-use ZealPHP\MongoDB\ReadConcern;
-use ZealPHP\MongoDB\WriteConcern;
-use ZealPHP\MongoDB\ReadPreference;
 use ZealPHP\MongoDB\Client;
+use ZealPHP\MongoDB\ReadConcern;
+use ZealPHP\MongoDB\ReadPreference;
+use ZealPHP\MongoDB\WriteConcern;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 // ============================================================
@@ -51,9 +70,9 @@ check('ReadConcern::AVAILABLE', ReadConcern::AVAILABLE === 'available');
 check('ReadConcern::SNAPSHOT', ReadConcern::SNAPSHOT === 'snapshot');
 
 // JsonSerializable
-check('ReadConcern implements JsonSerializable', $rc instanceof \JsonSerializable);
+check('ReadConcern implements JsonSerializable', $rc instanceof JsonSerializable);
 $defaultJson = $rc->jsonSerialize();
-check('ReadConcern default json is empty stdClass', $defaultJson instanceof \stdClass);
+check('ReadConcern default json is empty stdClass', $defaultJson instanceof stdClass);
 
 $localJson = $rcLocal->jsonSerialize();
 check('ReadConcern local json has level', is_array($localJson) && ($localJson['level'] ?? null) === 'local');
@@ -82,7 +101,7 @@ check('WriteConcern majority getW', $wcMaj->getW() === 'majority');
 check('WriteConcern::MAJORITY', WriteConcern::MAJORITY === 'majority');
 
 // JsonSerializable
-check('WriteConcern implements JsonSerializable', $wc instanceof \JsonSerializable);
+check('WriteConcern implements JsonSerializable', $wc instanceof JsonSerializable);
 $wcJson = $wc2->jsonSerialize();
 check('WriteConcern json has w', ($wcJson['w'] ?? null) === 1);
 check('WriteConcern json has j', ($wcJson['j'] ?? null) === true);
@@ -126,7 +145,7 @@ check('ReadPreference::NO_MAX_STALENESS', ReadPreference::NO_MAX_STALENESS === -
 check('ReadPreference::SMALLEST_MAX_STALENESS_SECONDS', ReadPreference::SMALLEST_MAX_STALENESS_SECONDS === 90);
 
 // JsonSerializable
-check('ReadPreference implements JsonSerializable', $rp instanceof \JsonSerializable);
+check('ReadPreference implements JsonSerializable', $rp instanceof JsonSerializable);
 $rpJson = $rp->jsonSerialize();
 check('ReadPreference json has mode', ($rpJson['mode'] ?? null) === 'primary');
 
@@ -189,6 +208,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

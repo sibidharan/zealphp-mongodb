@@ -1,13 +1,27 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
 
-class Database
+use Stringable;
+
+use function array_merge;
+use function is_array;
+use function zealphp_mongodb_create_collection;
+use function zealphp_mongodb_drop_collection;
+use function zealphp_mongodb_drop_database;
+use function zealphp_mongodb_list_collection_names;
+use function zealphp_mongodb_run_command;
+
+class Database implements Stringable
 {
     public function __construct(
         private int $poolId,
         private string $databaseName,
-        private array $options = []
-    ) {}
+        private array $options = [],
+    ) {
+    }
 
     public function __get(string $name): Collection
     {
@@ -36,8 +50,9 @@ class Database
 
     public function command(array|object $command, array $options = []): array
     {
-        $cmd = Collection::prepareBSON((array)$command);
+        $cmd = Collection::prepareBSON((array) $command);
         $result = zealphp_mongodb_run_command($this->poolId, $this->databaseName, $cmd);
+
         return is_array($result) ? $result : [$result];
     }
 
@@ -47,24 +62,28 @@ class Database
         $cmd = ['aggregate' => 1, 'pipeline' => $pipeline, 'cursor' => ['batchSize' => 1000]];
         $result = $this->command($cmd);
         $docs = $result['cursor']['firstBatch'] ?? [];
+
         return new ArrayCursor($docs);
     }
 
     public function createCollection(string $collectionName, array $options = []): array
     {
         zealphp_mongodb_create_collection($this->poolId, $this->databaseName, $collectionName);
+
         return ['ok' => 1];
     }
 
     public function dropCollection(string $collectionName, array $options = []): array
     {
         zealphp_mongodb_drop_collection($this->poolId, $this->databaseName, $collectionName);
+
         return ['ok' => 1];
     }
 
     public function drop(array $options = []): array
     {
         zealphp_mongodb_drop_database($this->poolId, $this->databaseName);
+
         return ['ok' => 1];
     }
 
@@ -72,6 +91,7 @@ class Database
     {
         $cmd = ['listCollections' => 1];
         $result = $this->command($cmd);
+
         return $result['cursor']['firstBatch'] ?? [];
     }
 
@@ -83,12 +103,14 @@ class Database
     public function modifyCollection(string $collectionName, array $collectionOptions, array $options = []): array
     {
         $cmd = array_merge(['collMod' => $collectionName], $collectionOptions);
+
         return $this->command($cmd);
     }
 
-    public function renameCollection(string $from, string $to, ?string $toDb = null, array $options = []): array
+    public function renameCollection(string $from, string $to, string|null $toDb = null, array $options = []): array
     {
         $col = $this->selectCollection($from);
+
         return $col->rename($to, $toDb);
     }
 
@@ -101,18 +123,41 @@ class Database
     {
         $new = clone $this;
         $new->options = array_merge($this->options, $options);
+
         return $new;
     }
 
-    public function __toString(): string { return $this->databaseName; }
-    public function __debugInfo(): array { return ['databaseName' => $this->databaseName, 'poolId' => $this->poolId]; }
+    public function __toString(): string
+    {
+        return $this->databaseName;
+    }
 
-    private ?ReadConcern $readConcern = null;
-    private ?WriteConcern $writeConcern = null;
-    private ?ReadPreference $readPreference = null;
+    public function __debugInfo(): array
+    {
+        return ['databaseName' => $this->databaseName, 'poolId' => $this->poolId];
+    }
 
-    public function getReadConcern(): ReadConcern { return $this->readConcern ?? new ReadConcern(); }
-    public function getWriteConcern(): WriteConcern { return $this->writeConcern ?? new WriteConcern(1); }
-    public function getReadPreference(): ReadPreference { return $this->readPreference ?? new ReadPreference(ReadPreference::PRIMARY); }
-    public function getTypeMap(): array { return ['root' => 'array', 'document' => 'array', 'array' => 'array']; }
+    private ReadConcern|null $readConcern = null;
+    private WriteConcern|null $writeConcern = null;
+    private ReadPreference|null $readPreference = null;
+
+    public function getReadConcern(): ReadConcern
+    {
+        return $this->readConcern ?? new ReadConcern();
+    }
+
+    public function getWriteConcern(): WriteConcern
+    {
+        return $this->writeConcern ?? new WriteConcern(1);
+    }
+
+    public function getReadPreference(): ReadPreference
+    {
+        return $this->readPreference ?? new ReadPreference(ReadPreference::PRIMARY);
+    }
+
+    public function getTypeMap(): array
+    {
+        return ['root' => 'array', 'document' => 'array', 'array' => 'array'];
+    }
 }

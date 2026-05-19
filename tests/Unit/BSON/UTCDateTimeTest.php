@@ -1,10 +1,18 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
+use DateTime;
+use DateTimeImmutable;
+use JsonSerializable;
 use PHPUnit\Framework\TestCase;
+use ZealPHP\MongoDB\BSON\Type;
 use ZealPHP\MongoDB\BSON\UTCDateTime;
 use ZealPHP\MongoDB\BSON\UTCDateTimeInterface;
-use ZealPHP\MongoDB\BSON\Type;
+
+use function time;
 
 class UTCDateTimeTest extends TestCase
 {
@@ -23,7 +31,7 @@ class UTCDateTimeTest extends TestCase
 
     public function testConstructorFromDateTime(): void
     {
-        $dt = new \DateTime('2021-01-01T00:00:00Z');
+        $dt = new DateTime('2021-01-01T00:00:00Z');
         $utc = new UTCDateTime($dt);
         $this->assertGreaterThan(0, (int) (string) $utc);
     }
@@ -32,14 +40,14 @@ class UTCDateTimeTest extends TestCase
     {
         $utc = new UTCDateTime(1609459200000);
         $dt = $utc->toDateTime();
-        $this->assertInstanceOf(\DateTime::class, $dt);
+        $this->assertInstanceOf(DateTime::class, $dt);
     }
 
     public function testToDateTimeImmutable(): void
     {
         $utc = new UTCDateTime(1609459200000);
         $dti = $utc->toDateTimeImmutable();
-        $this->assertInstanceOf(\DateTimeImmutable::class, $dti);
+        $this->assertInstanceOf(DateTimeImmutable::class, $dti);
     }
 
     public function testImplementsInterfaces(): void
@@ -47,7 +55,7 @@ class UTCDateTimeTest extends TestCase
         $utc = new UTCDateTime();
         $this->assertInstanceOf(UTCDateTimeInterface::class, $utc);
         $this->assertInstanceOf(Type::class, $utc);
-        $this->assertInstanceOf(\JsonSerializable::class, $utc);
+        $this->assertInstanceOf(JsonSerializable::class, $utc);
     }
 
     public function testJsonSerialize(): void

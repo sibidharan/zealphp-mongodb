@@ -1,23 +1,47 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
 
-class Cursor implements \Iterator
+use Iterator;
+
+use function zealphp_mongodb_cursor_close;
+use function zealphp_mongodb_cursor_next;
+
+class Cursor implements Iterator
 {
     private Document|array|null $current = null;
     private int $key = -1;
     private bool $started = false;
 
-    public function __construct(private int $cursorId) {}
+    public function __construct(private readonly int $cursorId)
+    {
+    }
 
-    public function current(): Document|array|null { return $this->current; }
-    public function key(): int { return $this->key; }
-    public function valid(): bool { return $this->current !== null; }
+    public function current(): Document|array|null
+    {
+        return $this->current;
+    }
+
+    public function key(): int
+    {
+        return $this->key;
+    }
+
+    public function valid(): bool
+    {
+        return $this->current !== null;
+    }
+
     public function rewind(): void
     {
-        if (!$this->started) {
-            $this->started = true;
-            $this->next();
+        if ($this->started) {
+            return;
         }
+
+        $this->started = true;
+        $this->next();
     }
 
     public function next(): void
@@ -30,16 +54,20 @@ class Cursor implements \Iterator
     public function toArray(): array
     {
         $results = [];
-        if (!$this->started) {
+        if (! $this->started) {
             $this->rewind();
         }
+
         if ($this->current !== null) {
             $results[] = $this->current;
         }
+
         while (($doc = zealphp_mongodb_cursor_next($this->cursorId)) !== null) {
             $results[] = Collection::wrapDoc($doc);
         }
+
         $this->current = null;
+
         return $results;
     }
 

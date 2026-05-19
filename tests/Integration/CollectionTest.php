@@ -1,11 +1,22 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Throwable;
+use ZealPHP\MongoDB\BulkWriteResult;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\InsertManyResult;
-use ZealPHP\MongoDB\BulkWriteResult;
+
+use function array_column;
+use function count;
+use function extension_loaded;
+use function getenv;
+use function sort;
+use function uniqid;
 
 class CollectionTest extends TestCase
 {
@@ -14,9 +25,10 @@ class CollectionTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        if (!extension_loaded('zealphp-mongodb-ext')) {
+        if (! extension_loaded('zealphp-mongodb-ext')) {
             self::markTestSkipped('zealphp-mongodb-ext not loaded');
         }
+
         self::$client = new Client(getenv('MONGODB_URI') ?: 'mongodb://db.selfmade.ninja:27017');
     }
 
@@ -28,7 +40,10 @@ class CollectionTest extends TestCase
 
     protected function tearDown(): void
     {
-        try { $this->col->drop(); } catch (\Throwable $e) {}
+        try {
+            $this->col->drop();
+        } catch (Throwable) {
+        }
     }
 
     public function testInsertOneAndFindOne(): void
@@ -46,7 +61,9 @@ class CollectionTest extends TestCase
     public function testInsertMany(): void
     {
         $result = $this->col->insertMany([
-            ['x' => 1], ['x' => 2], ['x' => 3],
+            ['x' => 1],
+            ['x' => 2],
+            ['x' => 3],
         ]);
         $this->assertInstanceOf(InsertManyResult::class, $result);
         $this->assertSame(3, $result->getInsertedCount());
@@ -58,7 +75,7 @@ class CollectionTest extends TestCase
         $result = $this->col->updateOne(
             ['name' => 'bob'],
             ['$set' => ['name' => 'bob', 'age' => 25]],
-            ['upsert' => true]
+            ['upsert' => true],
         );
         $this->assertSame(0, $result->getMatchedCount());
 
@@ -70,11 +87,18 @@ class CollectionTest extends TestCase
     public function testFindWithSortLimitSkip(): void
     {
         $this->col->insertMany([
-            ['n' => 1], ['n' => 2], ['n' => 3], ['n' => 4], ['n' => 5],
+            ['n' => 1],
+            ['n' => 2],
+            ['n' => 3],
+            ['n' => 4],
+            ['n' => 5],
         ]);
         $cursor = $this->col->find([], ['sort' => ['n' => -1], 'limit' => 2, 'skip' => 1]);
         $docs = [];
-        foreach ($cursor as $doc) { $docs[] = $doc['n']; }
+        foreach ($cursor as $doc) {
+            $docs[] = $doc['n'];
+        }
+
         $this->assertSame([4, 3], $docs);
     }
 
@@ -89,7 +113,9 @@ class CollectionTest extends TestCase
     public function testDistinct(): void
     {
         $this->col->insertMany([
-            ['color' => 'red'], ['color' => 'blue'], ['color' => 'red'],
+            ['color' => 'red'],
+            ['color' => 'blue'],
+            ['color' => 'red'],
         ]);
         $colors = $this->col->distinct('color');
         sort($colors);
@@ -99,14 +125,19 @@ class CollectionTest extends TestCase
     public function testAggregate(): void
     {
         $this->col->insertMany([
-            ['cat' => 'A', 'v' => 1], ['cat' => 'B', 'v' => 2], ['cat' => 'A', 'v' => 3],
+            ['cat' => 'A', 'v' => 1],
+            ['cat' => 'B', 'v' => 2],
+            ['cat' => 'A', 'v' => 3],
         ]);
         $cursor = $this->col->aggregate([
             ['$group' => ['_id' => '$cat', 'total' => ['$sum' => '$v']]],
             ['$sort' => ['_id' => 1]],
         ]);
         $results = [];
-        foreach ($cursor as $doc) { $results[$doc['_id']] = $doc['total']; }
+        foreach ($cursor as $doc) {
+            $results[$doc['_id']] = $doc['total'];
+        }
+
         $this->assertSame(4, $results['A']);
         $this->assertSame(2, $results['B']);
     }
@@ -132,7 +163,7 @@ class CollectionTest extends TestCase
         $doc = $this->col->findOneAndUpdate(
             ['name' => 'test'],
             ['$set' => ['v' => 2]],
-            ['returnDocument' => 2]
+            ['returnDocument' => 2],
         );
         $this->assertNotNull($doc);
         $this->assertSame(2, $doc['v']);

@@ -1,12 +1,21 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use ZealPHP\MongoDB\Client;
-use ZealPHP\MongoDB\Database;
-use ZealPHP\MongoDB\Collection;
-use ZealPHP\MongoDB\Session;
 use ZealPHP\MongoDB\ChangeStream;
+use ZealPHP\MongoDB\Client;
+use ZealPHP\MongoDB\Collection;
+use ZealPHP\MongoDB\Database;
+use ZealPHP\MongoDB\ReadConcern;
+use ZealPHP\MongoDB\ReadPreference;
+use ZealPHP\MongoDB\Session;
+use ZealPHP\MongoDB\WriteConcern;
+
+use function extension_loaded;
+use function getenv;
 
 class ClientTest extends TestCase
 {
@@ -14,9 +23,10 @@ class ClientTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        if (!extension_loaded('zealphp-mongodb-ext')) {
+        if (! extension_loaded('zealphp-mongodb-ext')) {
             self::markTestSkipped('zealphp-mongodb-ext not loaded');
         }
+
         self::$client = new Client(getenv('MONGODB_URI') ?: 'mongodb://db.selfmade.ninja:27017');
     }
 
@@ -68,9 +78,9 @@ class ClientTest extends TestCase
 
     public function testConcernGetters(): void
     {
-        $this->assertInstanceOf(\ZealPHP\MongoDB\ReadConcern::class, self::$client->getReadConcern());
-        $this->assertInstanceOf(\ZealPHP\MongoDB\WriteConcern::class, self::$client->getWriteConcern());
-        $this->assertInstanceOf(\ZealPHP\MongoDB\ReadPreference::class, self::$client->getReadPreference());
+        $this->assertInstanceOf(ReadConcern::class, self::$client->getReadConcern());
+        $this->assertInstanceOf(WriteConcern::class, self::$client->getWriteConcern());
+        $this->assertInstanceOf(ReadPreference::class, self::$client->getReadPreference());
         $this->assertIsArray(self::$client->getTypeMap());
     }
 }

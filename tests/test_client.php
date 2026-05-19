@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Client API Tests
  *
@@ -7,25 +10,41 @@
  * against live MongoDB.
  */
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
-use ZealPHP\MongoDB\Client;
-use ZealPHP\MongoDB\Database;
-use ZealPHP\MongoDB\Collection;
-use ZealPHP\MongoDB\Session;
 use ZealPHP\MongoDB\ChangeStream;
+use ZealPHP\MongoDB\Client;
+use ZealPHP\MongoDB\Collection;
+use ZealPHP\MongoDB\Database;
+use ZealPHP\MongoDB\Session;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 $client = new Client('mongodb://db.selfmade.ninja:27017');
@@ -59,6 +78,7 @@ foreach ($dbList as $dbInfo) {
         break;
     }
 }
+
 check('listDatabases includes zealphp_test', $found);
 
 $tmpCol->drop();
@@ -76,10 +96,10 @@ $namesBeforeDrop = $client->listDatabaseNames();
 check('temp db exists before dropDatabase', in_array($dropDbName, $namesBeforeDrop));
 
 $result = $client->dropDatabase($dropDbName);
-check('dropDatabase returns ok', ($result['ok'] ?? 0) == 1);
+check('dropDatabase returns ok', ($result['ok'] ?? 0) === 1);
 
 $namesAfterDrop = $client->listDatabaseNames();
-check('temp db gone after dropDatabase', !in_array($dropDbName, $namesAfterDrop));
+check('temp db gone after dropDatabase', ! in_array($dropDbName, $namesAfterDrop));
 
 // ============================================================
 echo "\n=== selectDatabase ===\n";
@@ -143,7 +163,7 @@ echo "\n=== watch ===\n";
 
 $changeStream = $client->watch();
 check('watch returns ChangeStream', $changeStream instanceof ChangeStream);
-check('watch implements Iterator', $changeStream instanceof \Iterator);
+check('watch implements Iterator', $changeStream instanceof Iterator);
 check('changeStream valid() is false', $changeStream->valid() === false);
 check('changeStream current() is null', $changeStream->current() === null);
 check('changeStream getResumeToken() is null', $changeStream->getResumeToken() === null);
@@ -152,7 +172,7 @@ check('changeStream getResumeToken() is null', $changeStream->getResumeToken() =
 echo "\n=== __toString ===\n";
 // ============================================================
 
-$str = (string)$client;
+$str = (string) $client;
 check('__toString returns string', is_string($str));
 check('__toString contains mongodb://', str_contains($str, 'mongodb://'));
 
@@ -169,6 +189,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

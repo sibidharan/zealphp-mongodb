@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Collection Full API Tests
  *
@@ -7,24 +10,40 @@
  * against a live MongoDB instance.
  */
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
+use ZealPHP\MongoDB\BulkWriteResult;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\InsertManyResult;
-use ZealPHP\MongoDB\BulkWriteResult;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 $client = new Client('mongodb://db.selfmade.ninja:27017');
@@ -110,14 +129,14 @@ check('listIndexes has >= 4 indexes', $indexCount >= 4);
 
 // dropIndex (drop the name index)
 $dropResult = $col->dropIndex($idxName);
-check('dropIndex returns ok', ($dropResult['ok'] ?? 0) == 1);
+check('dropIndex returns ok', ($dropResult['ok'] ?? 0) === 1);
 
 $indexesAfterDrop = $col->listIndexes();
 check('listIndexes after dropIndex has fewer indexes', count($indexesAfterDrop) < $indexCount);
 
 // dropIndexes (drops all non-_id indexes)
 $dropAllResult = $col->dropIndexes();
-check('dropIndexes returns ok', ($dropAllResult['ok'] ?? 0) == 1);
+check('dropIndexes returns ok', ($dropAllResult['ok'] ?? 0) === 1);
 
 $indexesAfterDropAll = $col->listIndexes();
 check('after dropIndexes, only _id index remains', count($indexesAfterDropAll) === 1);
@@ -136,7 +155,7 @@ check('temp collection exists before drop', in_array('test_collection_drop_tmp',
 $tmpCol->drop();
 
 $namesAfter = $db->listCollectionNames();
-check('temp collection gone after drop', !in_array('test_collection_drop_tmp', $namesAfter));
+check('temp collection gone after drop', ! in_array('test_collection_drop_tmp', $namesAfter));
 
 // ============================================================
 echo "\n=== count (alias for countDocuments) ===\n";
@@ -168,7 +187,7 @@ $col->insertOne(['name' => 'Eve', 'score' => 10]);
 $updated = $col->findOneAndUpdate(
     ['name' => 'Eve'],
     ['$set' => ['score' => 99]],
-    ['returnDocument' => 2]  // RETURN_DOCUMENT_AFTER
+    ['returnDocument' => 2],  // RETURN_DOCUMENT_AFTER
 );
 check('findOneAndUpdate returns a doc', $updated !== null);
 check('findOneAndUpdate AFTER has updated score', ($updated['score'] ?? null) === 99);
@@ -196,14 +215,14 @@ $col->insertOne(['name' => 'Grace', 'old_field' => 'yes']);
 $replaced = $col->findOneAndReplace(
     ['name' => 'Grace'],
     ['name' => 'Grace', 'new_field' => 'replaced'],
-    ['returnDocument' => 2]  // RETURN_DOCUMENT_AFTER
+    ['returnDocument' => 2],  // RETURN_DOCUMENT_AFTER
 );
 check('findOneAndReplace returns a doc', $replaced !== null);
 check('findOneAndReplace AFTER has new_field', ($replaced['new_field'] ?? null) === 'replaced');
 
 // Verify old_field is gone (full replace, not merge)
 $grace = $col->findOne(['name' => 'Grace']);
-check('findOneAndReplace: old_field is gone', !isset($grace['old_field']));
+check('findOneAndReplace: old_field is gone', ! isset($grace['old_field']));
 check('findOneAndReplace: new_field present', ($grace['new_field'] ?? null) === 'replaced');
 
 // ============================================================
@@ -216,6 +235,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

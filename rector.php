@@ -11,4 +11,5 @@ return RectorConfig::configure()
     ->withPhpSets(php81: true)
     ->withSkip([
         __DIR__ . '/vendor',
+        __DIR__ . '/php/src/AsyncBridge.php',
     ]);

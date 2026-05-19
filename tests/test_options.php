@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Options Passthrough Tests
  *
@@ -6,23 +9,38 @@
  * on sync path against live MongoDB.
  */
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
 use ZealPHP\MongoDB\Client;
-use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\UpdateResult;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 $client = new Client('mongodb://db.selfmade.ninja:27017');
@@ -39,7 +57,7 @@ echo "=== updateOne with upsert ===\n";
 $result = $col->updateOne(
     ['name' => 'UpsertOne'],
     ['$set' => ['name' => 'UpsertOne', 'value' => 42]],
-    ['upsert' => true]
+    ['upsert' => true],
 );
 check('updateOne upsert returns UpdateResult', $result instanceof UpdateResult);
 // Upserted count should be 1 for a new doc
@@ -59,7 +77,7 @@ $col->deleteMany(['group' => 'upsert_many']);
 $result = $col->updateMany(
     ['group' => 'upsert_many'],
     ['$set' => ['group' => 'upsert_many', 'status' => 'active']],
-    ['upsert' => true]
+    ['upsert' => true],
 );
 check('updateMany upsert returns UpdateResult', $result instanceof UpdateResult);
 
@@ -74,7 +92,7 @@ echo "\n=== replaceOne with upsert ===\n";
 $result = $col->replaceOne(
     ['name' => 'ReplaceUpsert'],
     ['name' => 'ReplaceUpsert', 'replaced' => true, 'count' => 1],
-    ['upsert' => true]
+    ['upsert' => true],
 );
 check('replaceOne upsert returns UpdateResult', $result instanceof UpdateResult);
 
@@ -93,7 +111,7 @@ $col->insertOne(['name' => 'FindAndUp', 'score' => 10]);
 $updated = $col->findOneAndUpdate(
     ['name' => 'FindAndUp'],
     ['$set' => ['score' => 100]],
-    ['returnDocument' => 2]  // RETURN_DOCUMENT_AFTER
+    ['returnDocument' => 2],  // RETURN_DOCUMENT_AFTER
 );
 check('findOneAndUpdate AFTER returns doc', $updated !== null);
 check('findOneAndUpdate AFTER: score is 100', ($updated['score'] ?? null) === 100);
@@ -109,12 +127,12 @@ $col->insertOne(['name' => 'FindAndRepl', 'old' => true]);
 $replaced = $col->findOneAndReplace(
     ['name' => 'FindAndRepl'],
     ['name' => 'FindAndRepl', 'new' => true, 'version' => 2],
-    ['returnDocument' => 2]  // RETURN_DOCUMENT_AFTER
+    ['returnDocument' => 2],  // RETURN_DOCUMENT_AFTER
 );
 check('findOneAndReplace AFTER returns doc', $replaced !== null);
 check('findOneAndReplace AFTER: has new field', ($replaced['new'] ?? null) === true);
 check('findOneAndReplace AFTER: has version', ($replaced['version'] ?? null) === 2);
-check('findOneAndReplace AFTER: old field gone', !isset($replaced['old']));
+check('findOneAndReplace AFTER: old field gone', ! isset($replaced['old']));
 
 // ============================================================
 echo "\n=== findOne with projection ===\n";
@@ -125,13 +143,13 @@ $col->insertOne(['name' => 'Projected', 'age' => 25, 'city' => 'Berlin', 'score'
 
 $projected = $col->findOne(
     ['name' => 'Projected'],
-    ['projection' => ['_id' => 0, 'name' => 1]]
+    ['projection' => ['_id' => 0, 'name' => 1]],
 );
 check('findOne projection returns doc', $projected !== null);
 check('findOne projection: name present', isset($projected['name']));
-check('findOne projection: _id excluded', !isset($projected['_id']));
-check('findOne projection: age excluded', !isset($projected['age']));
-check('findOne projection: city excluded', !isset($projected['city']));
+check('findOne projection: _id excluded', ! isset($projected['_id']));
+check('findOne projection: age excluded', ! isset($projected['age']));
+check('findOne projection: city excluded', ! isset($projected['city']));
 
 // ============================================================
 echo "\n=== find with sort, limit, skip ===\n";
@@ -148,13 +166,14 @@ $col->insertMany([
 
 $cursor = $col->find(
     ['group' => 'sorttest'],
-    ['sort' => ['age' => 1], 'limit' => 2, 'skip' => 1]
+    ['sort' => ['age' => 1], 'limit' => 2, 'skip' => 1],
 );
 
 $results = [];
 foreach ($cursor as $doc) {
     $results[] = $doc;
 }
+
 check('find sort/limit/skip returns 2 docs', count($results) === 2);
 if (count($results) === 2) {
     check('find sort/limit/skip: first doc is B (age 20)', ($results[0]['name'] ?? null) === 'B');
@@ -171,7 +190,7 @@ echo "\n=== findOne with sort ===\n";
 
 $highest = $col->findOne(
     ['group' => 'sorttest'],
-    ['sort' => ['age' => -1]]
+    ['sort' => ['age' => -1]],
 );
 check('findOne with sort returns doc', $highest !== null);
 check('findOne sort desc: returns highest age (E, 50)', ($highest['name'] ?? null) === 'E');
@@ -187,6 +206,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

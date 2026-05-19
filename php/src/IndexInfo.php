@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
 
 class IndexInfo extends Document
@@ -11,7 +14,8 @@ class IndexInfo extends Document
     public function getKey(): array
     {
         $key = $this['key'] ?? [];
-        return $key instanceof Document ? $key->getArrayCopy() : (array)$key;
+
+        return $key instanceof Document ? $key->getArrayCopy() : (array) $key;
     }
 
     public function getNamespace(): string
@@ -26,12 +30,12 @@ class IndexInfo extends Document
 
     public function isUnique(): bool
     {
-        return (bool)($this['unique'] ?? false);
+        return (bool) ($this['unique'] ?? false);
     }
 
     public function isSparse(): bool
     {
-        return (bool)($this['sparse'] ?? false);
+        return (bool) ($this['sparse'] ?? false);
     }
 
     public function isTtl(): bool

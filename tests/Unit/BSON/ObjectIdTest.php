@@ -1,10 +1,19 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
+use InvalidArgumentException;
+use JsonSerializable;
 use PHPUnit\Framework\TestCase;
+use Stringable;
 use ZealPHP\MongoDB\BSON\ObjectId;
 use ZealPHP\MongoDB\BSON\ObjectIdInterface;
 use ZealPHP\MongoDB\BSON\Type;
+
+use function json_encode;
+use function time;
 
 class ObjectIdTest extends TestCase
 {
@@ -23,13 +32,13 @@ class ObjectIdTest extends TestCase
 
     public function testConstructorRejectsInvalidString(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         new ObjectId('invalid');
     }
 
     public function testConstructorRejectsTooShortString(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         new ObjectId('507f1f77');
     }
 
@@ -50,8 +59,8 @@ class ObjectIdTest extends TestCase
         $oid = new ObjectId();
         $this->assertInstanceOf(ObjectIdInterface::class, $oid);
         $this->assertInstanceOf(Type::class, $oid);
-        $this->assertInstanceOf(\JsonSerializable::class, $oid);
-        $this->assertInstanceOf(\Stringable::class, $oid);
+        $this->assertInstanceOf(JsonSerializable::class, $oid);
+        $this->assertInstanceOf(Stringable::class, $oid);
     }
 
     public function testJsonSerialize(): void

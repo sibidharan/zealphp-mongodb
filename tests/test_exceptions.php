@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Exception Hierarchy Tests
  *
@@ -10,33 +13,50 @@
 // Preload ExceptionInterface (defined in Exception.php, not its own file)
 require_once __DIR__ . '/../php/src/Exception/Exception.php';
 
-spl_autoload_register(function (string $class): void {
+spl_autoload_register(static function (string $class): void {
     $prefix = 'ZealPHP\\MongoDB\\';
-    if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+    if (! str_starts_with($class, $prefix)) {
+        return;
+    }
+
     $relative = substr($class, strlen($prefix));
     $file = __DIR__ . '/../php/src/' . str_replace('\\', '/', $relative) . '.php';
-    if (file_exists($file)) require_once $file;
+    if (! file_exists($file)) {
+        return;
+    }
+
+    require_once $file;
 });
 
-use ZealPHP\MongoDB\Exception\ExceptionInterface;
-use ZealPHP\MongoDB\Exception\Exception;
-use ZealPHP\MongoDB\Exception\RuntimeException;
-use ZealPHP\MongoDB\Exception\ConnectionException;
+use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Exception\AuthenticationException;
-use ZealPHP\MongoDB\Exception\ConnectionTimeoutException;
-use ZealPHP\MongoDB\Exception\ServerException;
-use ZealPHP\MongoDB\Exception\CommandException;
 use ZealPHP\MongoDB\Exception\BulkWriteException;
+use ZealPHP\MongoDB\Exception\CommandException;
+use ZealPHP\MongoDB\Exception\ConnectionException;
+use ZealPHP\MongoDB\Exception\ConnectionTimeoutException;
+use ZealPHP\MongoDB\Exception\Exception;
+use ZealPHP\MongoDB\Exception\ExceptionInterface;
 use ZealPHP\MongoDB\Exception\ExecutionTimeoutException;
 use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 use ZealPHP\MongoDB\Exception\LogicException;
+use ZealPHP\MongoDB\Exception\RuntimeException;
+use ZealPHP\MongoDB\Exception\ServerException;
 use ZealPHP\MongoDB\Exception\UnexpectedValueException;
 
-$pass = 0; $fail = 0; $errors = [];
-function check($label, $cond) {
+$pass = 0;
+$fail = 0;
+$errors = [];
+
+function check($label, $cond)
+{
     global $pass, $fail, $errors;
-    if ($cond) { $pass++; }
-    else { $fail++; $errors[] = $label; echo "FAIL $label\n"; }
+    if ($cond) {
+        $pass++;
+    } else {
+        $fail++;
+        $errors[] = $label;
+        echo "FAIL $label\n";
+    }
 }
 
 // ============================================================
@@ -48,7 +68,7 @@ $auth = new AuthenticationException('auth failed');
 check('AuthenticationException instanceof ConnectionException', $auth instanceof ConnectionException);
 check('AuthenticationException instanceof RuntimeException', $auth instanceof RuntimeException);
 check('AuthenticationException instanceof ExceptionInterface', $auth instanceof ExceptionInterface);
-check('AuthenticationException instanceof \Throwable', $auth instanceof \Throwable);
+check('AuthenticationException instanceof \Throwable', $auth instanceof Throwable);
 
 // ConnectionException -> RuntimeException
 $conn = new ConnectionException('conn failed');
@@ -67,13 +87,13 @@ check('ServerException instanceof RuntimeException', $server instanceof RuntimeE
 check('ServerException instanceof ExceptionInterface', $server instanceof ExceptionInterface);
 
 // CommandException -> ServerException -> RuntimeException
-$cmd = new CommandException('cmd error', 42, null, (object)['errmsg' => 'test']);
+$cmd = new CommandException('cmd error', 42, null, (object) ['errmsg' => 'test']);
 check('CommandException instanceof ServerException', $cmd instanceof ServerException);
 check('CommandException instanceof RuntimeException', $cmd instanceof RuntimeException);
 check('CommandException instanceof ExceptionInterface', $cmd instanceof ExceptionInterface);
 
 // BulkWriteException -> ServerException -> RuntimeException
-$bulk = new BulkWriteException('bulk error', 0, null, (object)['nInserted' => 0]);
+$bulk = new BulkWriteException('bulk error', 0, null, (object) ['nInserted' => 0]);
 check('BulkWriteException instanceof ServerException', $bulk instanceof ServerException);
 check('BulkWriteException instanceof RuntimeException', $bulk instanceof RuntimeException);
 check('BulkWriteException instanceof ExceptionInterface', $bulk instanceof ExceptionInterface);
@@ -112,7 +132,7 @@ check('UnexpectedValueException extends PHP UnexpectedValueException', $unexp in
 echo "\n=== CommandException getResultDocument ===\n";
 // ============================================================
 
-$resultDoc = (object)['errmsg' => 'not found', 'code' => 26];
+$resultDoc = (object) ['errmsg' => 'not found', 'code' => 26];
 $cmdEx = new CommandException('command failed', 26, null, $resultDoc);
 check('getResultDocument returns object', is_object($cmdEx->getResultDocument()));
 check('getResultDocument has errmsg', $cmdEx->getResultDocument()->errmsg === 'not found');
@@ -127,7 +147,7 @@ check('getResultDocument returns null when not provided', $cmdNoDoc->getResultDo
 echo "\n=== BulkWriteException getWriteResult ===\n";
 // ============================================================
 
-$writeResult = (object)['nInserted' => 2, 'nModified' => 1];
+$writeResult = (object) ['nInserted' => 2, 'nModified' => 1];
 $bulkEx = new BulkWriteException('bulk failed', 0, null, $writeResult);
 check('getWriteResult returns object', is_object($bulkEx->getWriteResult()));
 check('getWriteResult has nInserted', $bulkEx->getWriteResult()->nInserted === 2);
@@ -172,7 +192,7 @@ echo "\n=== Catch real MongoDB error ===\n";
 // ============================================================
 
 // Try to trigger a real error by running an invalid command
-$client = new \ZealPHP\MongoDB\Client('mongodb://db.selfmade.ninja:27017');
+$client = new Client('mongodb://db.selfmade.ninja:27017');
 $db = $client->selectDatabase('zealphp_test');
 
 $caught = false;
@@ -180,10 +200,11 @@ $errorMsg = '';
 try {
     // Run a command that MongoDB does not recognize
     $db->command(['invalidCommandThatDoesNotExist' => 1]);
-} catch (\Throwable $e) {
+} catch (Throwable $e) {
     $caught = true;
     $errorMsg = $e->getMessage();
 }
+
 check('invalid command throws an exception', $caught);
 check('error message is not empty', strlen($errorMsg) > 0);
 
@@ -192,6 +213,9 @@ echo "Results: $pass passed, $fail failed\n";
 echo "========================================\n";
 if (count($errors) > 0) {
     echo "\nFailed tests:\n";
-    foreach ($errors as $e) echo "  - $e\n";
+    foreach ($errors as $e) {
+        echo "  - $e\n";
+    }
 }
+
 exit($fail > 0 ? 1 : 0);

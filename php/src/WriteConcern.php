@@ -1,25 +1,51 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB;
 
-class WriteConcern implements \JsonSerializable
-{
-    const MAJORITY = 'majority';
+use JsonSerializable;
+use stdClass;
 
-    public readonly string|int|null $w;
-    public readonly ?bool $j;
+use function array_filter;
+
+class WriteConcern implements JsonSerializable
+{
+    public const MAJORITY = 'majority';
     public readonly int $wtimeout;
 
-    public function __construct(string|int $w, ?int $wtimeout = null, ?bool $journal = null)
+    public function __construct(public readonly string|int|null $w, int|null $wtimeout = null, public readonly bool|null $j = null)
     {
-        $this->w = $w;
         $this->wtimeout = $wtimeout ?? 0;
-        $this->j = $journal;
     }
 
-    public function getW(): string|int|null { return $this->w; }
-    public function getJournal(): ?bool { return $this->j; }
-    public function getWtimeout(): int { return $this->wtimeout; }
-    public function isDefault(): bool { return $this->w === null && $this->j === null && $this->wtimeout === 0; }
-    public function jsonSerialize(): mixed { return ['w' => $this->w, 'j' => $this->j, 'wtimeout' => $this->wtimeout]; }
-    public function bsonSerialize(): \stdClass { return (object)array_filter(['w' => $this->w, 'j' => $this->j, 'wtimeout' => $this->wtimeout], fn($v) => $v !== null); }
+    public function getW(): string|int|null
+    {
+        return $this->w;
+    }
+
+    public function getJournal(): bool|null
+    {
+        return $this->j;
+    }
+
+    public function getWtimeout(): int
+    {
+        return $this->wtimeout;
+    }
+
+    public function isDefault(): bool
+    {
+        return $this->w === null && $this->j === null && $this->wtimeout === 0;
+    }
+
+    public function jsonSerialize(): mixed
+    {
+        return ['w' => $this->w, 'j' => $this->j, 'wtimeout' => $this->wtimeout];
+    }
+
+    public function bsonSerialize(): stdClass
+    {
+        return (object) array_filter(['w' => $this->w, 'j' => $this->j, 'wtimeout' => $this->wtimeout], static fn ($v) => $v !== null);
+    }
 }

@@ -1,5 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\BSON;
+
+use JsonSerializable;
+use Stringable;
 
 /**
  * BSON Decimal128 type.
@@ -7,13 +13,10 @@ namespace ZealPHP\MongoDB\BSON;
  * Represents a 128-bit decimal floating point value, suitable for
  * storing exact decimal representations (e.g., financial data).
  */
-class Decimal128 implements Decimal128Interface, \JsonSerializable, Type, \Stringable
+class Decimal128 implements Decimal128Interface, JsonSerializable, Type, Stringable
 {
-    private string $value;
-
-    public function __construct(string $value)
+    public function __construct(private readonly string $value)
     {
-        $this->value = $value;
     }
 
     public function __toString(): string

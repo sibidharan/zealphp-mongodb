@@ -1,8 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Operation;
 
 class FindOneAndUpdate
 {
-    const RETURN_DOCUMENT_BEFORE = 1;
-    const RETURN_DOCUMENT_AFTER = 2;
+    public const RETURN_DOCUMENT_BEFORE = 1;
+    public const RETURN_DOCUMENT_AFTER = 2;
 }

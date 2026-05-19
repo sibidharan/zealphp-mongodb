@@ -1,9 +1,12 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
 use PHPUnit\Framework\TestCase;
-use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\MaxKey;
+use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\Type;
 
 class MinKeyMaxKeyTest extends TestCase

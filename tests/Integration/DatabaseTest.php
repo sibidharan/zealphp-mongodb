@@ -1,9 +1,20 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Throwable;
 use ZealPHP\MongoDB\Client;
+use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
+use ZealPHP\MongoDB\Exception\RuntimeException;
+use ZealPHP\MongoDB\GridFS\Bucket;
+
+use function extension_loaded;
+use function getenv;
+use function uniqid;
 
 class DatabaseTest extends TestCase
 {
@@ -12,9 +23,10 @@ class DatabaseTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        if (!extension_loaded('zealphp-mongodb-ext')) {
+        if (! extension_loaded('zealphp-mongodb-ext')) {
             self::markTestSkipped('zealphp-mongodb-ext not loaded');
         }
+
         self::$client = new Client(getenv('MONGODB_URI') ?: 'mongodb://db.selfmade.ninja:27017');
     }
 
@@ -25,7 +37,10 @@ class DatabaseTest extends TestCase
 
     protected function tearDown(): void
     {
-        try { $this->db->drop(); } catch (\Throwable $e) {}
+        try {
+            $this->db->drop();
+        } catch (Throwable) {
+        }
     }
 
     public function testCommandPing(): void
@@ -49,7 +64,7 @@ class DatabaseTest extends TestCase
     public function testSelectCollectionMagicGet(): void
     {
         $col = $this->db->myCollection;
-        $this->assertInstanceOf(\ZealPHP\MongoDB\Collection::class, $col);
+        $this->assertInstanceOf(Collection::class, $col);
         $this->assertSame('myCollection', $col->getCollectionName());
     }
 
@@ -61,10 +76,10 @@ class DatabaseTest extends TestCase
     public function testSelectGridFSBucket(): void
     {
         $bucket = $this->db->selectGridFSBucket();
-        $this->assertInstanceOf(\ZealPHP\MongoDB\GridFS\Bucket::class, $bucket);
+        $this->assertInstanceOf(Bucket::class, $bucket);
         $this->assertSame('fs', $bucket->getBucketName());
 
-        $this->expectException(\ZealPHP\MongoDB\Exception\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $bucket->find();
     }
 
