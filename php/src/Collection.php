@@ -74,14 +74,23 @@ class Collection
         return self::wrapDoc(zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
 
-    public function find(array|object $filter = [], array $options = []): Cursor|ArrayCursor
+    public function find(array|object $filter = [], array $options = []): Cursor|AsyncCursor
     {
         $filter = self::prepareBSON((array) $filter);
         if (AsyncBridge::isCoroutineMode()) {
-            $opts = self::prepareBSON($options);
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find', $filter, $opts ?: null);
+            if ($options) {
+                $filter['__options'] = self::prepareBSON($options);
+            }
 
-            return new ArrayCursor($result ?? []);
+            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_cursor', $filter);
+            if (is_array($result) && isset($result['docs'])) {
+                $cursorId = isset($result['cursor_id']) ? (int) $result['cursor_id'] : null;
+                $exhausted = $result['exhausted'] ?? true;
+
+                return new AsyncCursor($cursorId, $result['docs'], $exhausted);
+            }
+
+            throw new Exception\RuntimeException('Failed to create async cursor: ' . json_encode($result));
         }
 
         $opts = $options ?: null;
@@ -206,13 +215,19 @@ class Collection
         return zealphp_mongodb_distinct($this->poolId, $this->dbName, $this->colName, $fieldName, $filter, $opts);
     }
 
-    public function aggregate(array $pipeline, array $options = []): Cursor|ArrayCursor
+    public function aggregate(array $pipeline, array $options = []): Cursor|AsyncCursor
     {
         $pipeline = self::prepareBSON($pipeline);
         if (AsyncBridge::isCoroutineMode()) {
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'aggregate', [], $pipeline);
+            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'aggregate_cursor', [], $pipeline);
+            if (is_array($result) && isset($result['docs'])) {
+                $cursorId = isset($result['cursor_id']) ? (int) $result['cursor_id'] : null;
+                $exhausted = $result['exhausted'] ?? true;
 
-            return new ArrayCursor($result ?? []);
+                return new AsyncCursor($cursorId, $result['docs'], $exhausted);
+            }
+
+            throw new Exception\RuntimeException('Failed to create async cursor: ' . json_encode($result));
         }
 
         $opts = $options ?: null;

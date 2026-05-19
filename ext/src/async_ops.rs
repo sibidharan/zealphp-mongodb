@@ -1,5 +1,11 @@
 use mongodb::Client;
+use mongodb::Cursor;
 use bson::Document;
+use futures::StreamExt;
+
+use crate::cursor;
+
+const EAGER_BATCH_SIZE: usize = 100;
 
 pub async fn exec_async(
     client: Client,
@@ -266,6 +272,41 @@ pub async fn exec_async(
                 Err(e) => error_json(&e.to_string()),
             }
         }
+        "find_cursor" => {
+            let filter = filter_or_doc.unwrap_or_default();
+            let extra_opts = update_or_pipeline.and_then(|v| v.into_iter().next());
+            let combined_opts = extra_opts.or(opts_doc);
+            let mut find_opts = mongodb::options::FindOptions::default();
+            if let Some(ref opts) = combined_opts {
+                if let Ok(limit) = opts.get_i64("limit") {
+                    find_opts.limit = Some(limit);
+                } else if let Ok(limit) = opts.get_i32("limit") {
+                    find_opts.limit = Some(limit as i64);
+                }
+                if let Ok(skip) = opts.get_i64("skip") {
+                    find_opts.skip = Some(skip as u64);
+                } else if let Ok(skip) = opts.get_i32("skip") {
+                    find_opts.skip = Some(skip as u64);
+                }
+                if let Ok(sort_doc) = opts.get_document("sort") {
+                    find_opts.sort = Some(sort_doc.clone());
+                }
+                if let Ok(proj_doc) = opts.get_document("projection") {
+                    find_opts.projection = Some(proj_doc.clone());
+                }
+            }
+            match collection.find(filter).with_options(find_opts).await {
+                Ok(mongo_cursor) => eager_batch_cursor(mongo_cursor).await,
+                Err(e) => error_json(&e.to_string()),
+            }
+        }
+        "aggregate_cursor" => {
+            let pipeline = update_or_pipeline.unwrap_or_default();
+            match collection.aggregate(pipeline).await {
+                Ok(mongo_cursor) => eager_batch_cursor(mongo_cursor).await,
+                Err(e) => error_json(&e.to_string()),
+            }
+        }
         _ => error_json(&format!("Unknown operation: {}", op)),
     }
 }
@@ -310,4 +351,25 @@ fn error_json(msg: &str) -> String {
 
 fn doc_to_json(doc: &Document) -> String {
     serde_json::to_string(doc).unwrap_or_else(|_| "{}".to_string())
+}
+
+async fn eager_batch_cursor(mut mongo_cursor: Cursor<Document>) -> String {
+    let mut docs = Vec::with_capacity(EAGER_BATCH_SIZE);
+    let mut exhausted = false;
+
+    for _ in 0..EAGER_BATCH_SIZE {
+        match mongo_cursor.next().await {
+            Some(Ok(doc)) => docs.push(doc_to_json(&doc)),
+            Some(Err(e)) => return error_json(&e.to_string()),
+            None => { exhausted = true; break; }
+        }
+    }
+
+    let docs_json = docs.join(",");
+    if exhausted {
+        format!("{{\"docs\":[{}],\"exhausted\":true}}", docs_json)
+    } else {
+        let cursor_id = cursor::store_cursor(mongo_cursor);
+        format!("{{\"cursor_id\":{},\"docs\":[{}],\"exhausted\":false}}", cursor_id, docs_json)
+    }
 }

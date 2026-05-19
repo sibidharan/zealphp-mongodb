@@ -456,6 +456,107 @@ pub fn zealphp_mongodb_cursor_close(cursor_id: i64) -> PhpResult<()> {
     cursor::remove(cursor_id as u64).map_err(|e| PhpException::default(e))
 }
 
+#[php_function]
+pub fn zealphp_mongodb_cursor_next_async(cursor_id: i64) -> PhpResult<Zval> {
+    let cursor_arc = {
+        let cursors = cursor::get_store().lock().unwrap();
+        cursors
+            .get(&(cursor_id as u64))
+            .cloned()
+            .ok_or_else(|| PhpException::default(format!("Invalid cursor ID: {}", cursor_id)))?
+    };
+
+    let task_id = async_store::new_task_id();
+    let efd = coroutine::create_eventfd();
+    if efd < 0 {
+        return Err(PhpException::default("Failed to create eventfd".to_string()));
+    }
+
+    coroutine::spawn_task(
+        async move {
+            use futures::StreamExt;
+            let mut cur = cursor_arc.lock().await;
+            match cur.next().await {
+                Some(Ok(doc)) => serde_json::to_string(&doc).unwrap_or_else(|_| "{}".to_string()),
+                Some(Err(e)) => {
+                    let escaped = e.to_string().replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("{{\"__error\":\"{}\"}}", escaped)
+                }
+                None => "null".to_string(),
+            }
+        },
+        task_id,
+        efd,
+    );
+
+    let mut result = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut efd_zval = Zval::new();
+    efd_zval.set_long(efd as i64);
+    let _ = ht.insert("efd", efd_zval);
+    let mut tid_zval = Zval::new();
+    tid_zval.set_long(task_id as i64);
+    let _ = ht.insert("task_id", tid_zval);
+    result.set_hashtable(ht);
+    Ok(result)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_cursor_next_batch_async(cursor_id: i64, batch_size: i64) -> PhpResult<Zval> {
+    let cursor_arc = {
+        let cursors = cursor::get_store().lock().unwrap();
+        cursors
+            .get(&(cursor_id as u64))
+            .cloned()
+            .ok_or_else(|| PhpException::default(format!("Invalid cursor ID: {}", cursor_id)))?
+    };
+
+    let batch = (batch_size.max(1) as usize).min(1000);
+    let task_id = async_store::new_task_id();
+    let efd = coroutine::create_eventfd();
+    if efd < 0 {
+        return Err(PhpException::default("Failed to create eventfd".to_string()));
+    }
+
+    coroutine::spawn_task(
+        async move {
+            use futures::StreamExt;
+            let mut cur = cursor_arc.lock().await;
+            let mut docs = Vec::with_capacity(batch);
+            let mut exhausted = false;
+            for _ in 0..batch {
+                match cur.next().await {
+                    Some(Ok(doc)) => {
+                        docs.push(serde_json::to_string(&doc).unwrap_or_else(|_| "{}".to_string()));
+                    }
+                    Some(Err(e)) => {
+                        let escaped = e.to_string().replace('\\', "\\\\").replace('"', "\\\"");
+                        return format!("{{\"__error\":\"{}\"}}", escaped);
+                    }
+                    None => {
+                        exhausted = true;
+                        break;
+                    }
+                }
+            }
+            format!("{{\"docs\":[{}],\"exhausted\":{}}}", docs.join(","), exhausted)
+        },
+        task_id,
+        efd,
+    );
+
+    let mut result = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut efd_zval = Zval::new();
+    efd_zval.set_long(efd as i64);
+    let _ = ht.insert("efd", efd_zval);
+    let mut tid_zval = Zval::new();
+    tid_zval.set_long(task_id as i64);
+    let _ = ht.insert("task_id", tid_zval);
+    result.set_hashtable(ht);
+    Ok(result)
+}
+
 // --- New collection/database operations ---
 
 #[php_function]
@@ -581,7 +682,7 @@ pub fn zealphp_mongodb_exec_async(
     };
     let update_docs = match update_or_pipeline {
         Some(z) if !z.is_null() => {
-            if op == "aggregate" {
+            if op == "aggregate" || op == "aggregate_cursor" {
                 Some(bson_convert::php_to_pipeline(z).map_err(|e| PhpException::default(e))?)
             } else {
                 Some(vec![bson_convert::php_to_doc(z).map_err(|e| PhpException::default(e))?])

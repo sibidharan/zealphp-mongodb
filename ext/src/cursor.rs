@@ -17,6 +17,10 @@ lazy_static::lazy_static! {
 
 static NEXT_CURSOR_ID: AtomicU64 = AtomicU64::new(1);
 
+pub fn get_store() -> &'static Mutex<HashMap<u64, SharedCursor>> {
+    &CURSORS
+}
+
 pub fn store_cursor(cursor: Cursor<Document>) -> u64 {
     let id = NEXT_CURSOR_ID.fetch_add(1, Ordering::SeqCst);
     CURSORS
