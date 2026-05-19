@@ -54,24 +54,3 @@ namespace MongoDB\Model {
     /** @template-extends \ArrayObject<int, mixed> */
     class BSONArray extends \ArrayObject {}
 }
-
-namespace OpenSwoole {
-    class Coroutine {
-        public static function getCid(): int {}
-    }
-}
-
-namespace OpenSwoole\Coroutine {
-    class System {
-        public static function waitEvent(int $fd, int $events = OPENSWOOLE_EVENT_READ, float $timeout = -1): int|false {}
-    }
-}
-
-namespace OpenSwoole {
-    class Event {
-    }
-}
-
-namespace {
-    const OPENSWOOLE_EVENT_READ = 512;
-}
