@@ -43,3 +43,11 @@ function zealphp_mongodb_cursor_close(int $cursorId): void {}
 function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline = null): array {}
 function zealphp_mongodb_async_result(int $taskId): ?string {}
 function zealphp_mongodb_close_efd(int $efd): void {}
+
+namespace MongoDB\Model {
+    /** @template-extends \ArrayObject<string, mixed> */
+    class BSONDocument extends \ArrayObject {}
+
+    /** @template-extends \ArrayObject<int, mixed> */
+    class BSONArray extends \ArrayObject {}
+}
