@@ -44,7 +44,7 @@ class Database
     public function aggregate(array $pipeline, array $options = []): ArrayCursor
     {
         $pipeline = Collection::prepareBSON($pipeline);
-        $cmd = ['aggregate' => 1, 'pipeline' => $pipeline, 'cursor' => new \stdClass()];
+        $cmd = ['aggregate' => 1, 'pipeline' => $pipeline, 'cursor' => ['batchSize' => 1000]];
         $result = $this->command($cmd);
         $docs = $result['cursor']['firstBatch'] ?? [];
         return new ArrayCursor($docs);
