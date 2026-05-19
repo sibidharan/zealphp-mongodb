@@ -3,13 +3,13 @@ namespace ZealPHP\MongoDB;
 
 class Cursor implements \Iterator
 {
-    private ?array $current = null;
+    private Document|array|null $current = null;
     private int $key = -1;
     private bool $started = false;
 
     public function __construct(private int $cursorId) {}
 
-    public function current(): ?array { return $this->current; }
+    public function current(): Document|array|null { return $this->current; }
     public function key(): int { return $this->key; }
     public function valid(): bool { return $this->current !== null; }
     public function rewind(): void
@@ -22,7 +22,8 @@ class Cursor implements \Iterator
 
     public function next(): void
     {
-        $this->current = zealphp_mongodb_cursor_next($this->cursorId);
+        $raw = zealphp_mongodb_cursor_next($this->cursorId);
+        $this->current = $raw !== null ? Collection::wrapDoc($raw) : null;
         $this->key++;
     }
 
@@ -36,7 +37,7 @@ class Cursor implements \Iterator
             $results[] = $this->current;
         }
         while (($doc = zealphp_mongodb_cursor_next($this->cursorId)) !== null) {
-            $results[] = $doc;
+            $results[] = Collection::wrapDoc($doc);
         }
         $this->current = null;
         return $results;

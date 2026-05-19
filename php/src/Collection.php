@@ -10,14 +10,14 @@ class Collection
         private array $options = []
     ) {}
 
-    public function findOne(array|object $filter = [], array $options = []): ?array
+    public function findOne(array|object $filter = [], array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array)$filter);
         if (AsyncBridge::isCoroutineMode()) {
-            return AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one', $filter);
+            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one', $filter));
         }
         $opts = null;
-        return zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        return self::wrapDoc(zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor|ArrayCursor
@@ -131,36 +131,36 @@ class Collection
         return new Cursor($cursorId);
     }
 
-    public function findOneAndUpdate(array|object $filter, array|object $update, array $options = []): ?array
+    public function findOneAndUpdate(array|object $filter, array|object $update, array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array)$filter);
         $update = self::prepareBSON((array)$update);
         if (AsyncBridge::isCoroutineMode()) {
-            return AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_update', $filter, $update);
+            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_update', $filter, $update));
         }
         $opts = null;
-        return zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
+        return self::wrapDoc(zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
 
-    public function findOneAndDelete(array|object $filter, array $options = []): ?array
+    public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array)$filter);
         if (AsyncBridge::isCoroutineMode()) {
-            return AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_delete', $filter);
+            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_delete', $filter));
         }
         $opts = null;
-        return zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        return self::wrapDoc(zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
 
-    public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): ?array
+    public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array)$filter);
         $replacement = self::prepareBSON((array)$replacement);
         if (AsyncBridge::isCoroutineMode()) {
-            return AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_replace', $filter, $replacement);
+            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_replace', $filter, $replacement));
         }
         $opts = null;
-        return zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
+        return self::wrapDoc(zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
     }
 
     public function createIndex(array|object $key, array $options = []): string
@@ -179,9 +179,28 @@ class Collection
     {
     }
 
+    public function count(array|object $filter = [], array $options = []): int
+    {
+        return $this->countDocuments($filter, $options);
+    }
+
     public function getCollectionName(): string { return $this->colName; }
     public function getDatabaseName(): string { return $this->dbName; }
     public function getNamespace(): string { return $this->dbName . '.' . $this->colName; }
+
+    public static function wrapDoc(mixed $data): mixed
+    {
+        if ($data === null) return null;
+        if (!is_array($data)) return $data;
+        if (array_is_list($data)) {
+            return array_map([self::class, 'wrapDoc'], $data);
+        }
+        $wrapped = new Document();
+        foreach ($data as $key => $value) {
+            $wrapped[$key] = is_array($value) ? self::wrapDoc($value) : $value;
+        }
+        return $wrapped;
+    }
 
     private static function prepareBSON(mixed $data): mixed
     {
