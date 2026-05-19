@@ -18,6 +18,7 @@
         <file name="stubs/zealphp_mongodb.phpstub"/>
     </stubs>
     <issueHandlers>
+        <UnusedIssueHandlerSuppression errorLevel="suppress"/>
         <MissingOverrideAttribute errorLevel="suppress"/>
         <MissingTemplateParam errorLevel="suppress"/>
         <MissingDependency errorLevel="suppress"/>
@@ -28,10 +29,7 @@
                 <referencedClass name="MongoDB\BSON\Regex"/>
                 <referencedClass name="MongoDB\Model\BSONDocument"/>
                 <referencedClass name="MongoDB\Model\BSONArray"/>
-                <referencedClass name="OpenSwoole\Coroutine"/>
                 <referencedClass name="OpenSwoole\Coroutine\Channel"/>
-                <referencedClass name="OpenSwoole\Coroutine\System"/>
-                <referencedClass name="OpenSwoole\Event"/>
             </errorLevel>
         </UndefinedClass>
     </issueHandlers>
