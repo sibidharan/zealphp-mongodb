@@ -438,7 +438,7 @@ class Collection
 
     public function getTypeMap(): array
     {
-        return ['root' => 'array', 'document' => 'array', 'array' => 'array'];
+        return ['root' => BSONDocument::class, 'document' => BSONDocument::class, 'array' => BSONArray::class];
     }
 
     public static function wrapDoc(mixed $data): mixed
@@ -452,7 +452,20 @@ class Collection
         }
 
         if (array_is_list($data)) {
-            return array_map([self::class, 'wrapDoc'], $data);
+            $wrapped = array_map([self::class, 'wrapDoc'], $data);
+
+            return new BSONArray($wrapped);
+        }
+
+        // Unwrap extended JSON types from async path (serde_json serialization)
+        if (isset($data['$oid']) && count($data) === 1) {
+            return (string) $data['$oid'];
+        }
+        if (isset($data['$date']['$numberLong']) && count($data) === 1) {
+            return (int) $data['$date']['$numberLong'];
+        }
+        if (isset($data['$numberDecimal']) && count($data) === 1) {
+            return (string) $data['$numberDecimal'];
         }
 
         $wrapped = new Document();
