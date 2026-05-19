@@ -14,9 +14,10 @@ class Collection
     {
         $filter = self::prepareBSON((array)$filter);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one', $filter));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return self::wrapDoc(zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
 
@@ -48,9 +49,10 @@ class Collection
         $filter = self::prepareBSON((array)$filter);
         $update = self::prepareBSON((array)$update);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'update_one', $filter, $update));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return new UpdateResult(zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
 
@@ -59,9 +61,10 @@ class Collection
         $filter = self::prepareBSON((array)$filter);
         $update = self::prepareBSON((array)$update);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'update_many', $filter, $update));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return new UpdateResult(zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
 
@@ -90,9 +93,10 @@ class Collection
         $filter = self::prepareBSON((array)$filter);
         $replacement = self::prepareBSON((array)$replacement);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'replace_one', $filter, $replacement));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return new UpdateResult(zealphp_mongodb_replace_one($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
     }
 
@@ -136,9 +140,10 @@ class Collection
         $filter = self::prepareBSON((array)$filter);
         $update = self::prepareBSON((array)$update);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_update', $filter, $update));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return self::wrapDoc(zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
 
@@ -157,9 +162,10 @@ class Collection
         $filter = self::prepareBSON((array)$filter);
         $replacement = self::prepareBSON((array)$replacement);
         if (AsyncBridge::isCoroutineMode()) {
+            if ($options) $filter['__options'] = $options;
             return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_replace', $filter, $replacement));
         }
-        $opts = null;
+        $opts = $options ?: null;
         return self::wrapDoc(zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
     }
 
