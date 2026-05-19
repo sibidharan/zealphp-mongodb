@@ -2,5 +2,4 @@
 *.so
 /vendor/
 /.phpcs-cache
-/composer.lock
 /.psalm/
