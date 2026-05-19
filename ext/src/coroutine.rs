@@ -61,3 +61,14 @@ where
         signal_eventfd(efd);
     });
 }
+
+pub fn spawn_batch_task<F>(future: F, task_id: u64, efd: i32)
+where
+    F: std::future::Future<Output = async_store::BatchResult> + Send + 'static,
+{
+    runtime().spawn(async move {
+        let result = future.await;
+        async_store::store_batch(task_id, result);
+        signal_eventfd(efd);
+    });
+}

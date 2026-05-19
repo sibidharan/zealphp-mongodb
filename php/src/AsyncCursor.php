@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Iterator;
-use OpenSwoole\Coroutine\Channel;
-use OpenSwoole\Event;
 
-use function zealphp_mongodb_async_result;
-use function zealphp_mongodb_close_efd;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next_batch_async;
 
@@ -88,30 +84,9 @@ class AsyncCursor implements Iterator
 
     private function fetchBatch(): void
     {
-        $async = zealphp_mongodb_cursor_next_batch_async($this->cursorId, self::BATCH_SIZE);
-        $efd = $async['efd'];
-        $taskId = $async['task_id'];
-        $chan = new Channel(1);
-
-        Event::add($efd, static function () use ($chan, $taskId, $efd) {
-            $json = zealphp_mongodb_async_result($taskId);
-            Event::del($efd);
-            zealphp_mongodb_close_efd($efd);
-            $chan->push($json);
-        });
-
-        $json = $chan->pop(30.0);
-        if ($json === false) {
-            Event::del($efd);
-            zealphp_mongodb_close_efd($efd);
-
-            throw new Exception\RuntimeException('Cursor batch timeout');
-        }
-
-        $result = json_decode($json, true);
-        if (is_array($result) && isset($result['__error'])) {
-            throw new Exception\RuntimeException('Cursor error: ' . $result['__error']);
-        }
+        $result = Collection::awaitBatch(
+            zealphp_mongodb_cursor_next_batch_async($this->cursorId, self::BATCH_SIZE)
+        );
 
         $this->buffer = $result['docs'] ?? [];
         if ($result['exhausted'] ?? true) {

@@ -47,6 +47,10 @@ use function zealphp_mongodb_replace_one;
 use function zealphp_mongodb_run_command;
 use function zealphp_mongodb_update_many;
 use function zealphp_mongodb_update_one;
+use function zealphp_mongodb_find_cursor_async;
+use function zealphp_mongodb_aggregate_cursor_async;
+use function zealphp_mongodb_batch_result;
+use function zealphp_mongodb_close_efd;
 
 class Collection
 {
@@ -78,19 +82,16 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = self::prepareBSON($options);
-            }
+            $opts = $options ? self::prepareBSON($options) : null;
+            $result = self::awaitBatch(
+                zealphp_mongodb_find_cursor_async($this->poolId, $this->dbName, $this->colName, $filter, $opts)
+            );
 
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_cursor', $filter);
-            if (is_array($result) && isset($result['docs'])) {
-                $cursorId = isset($result['cursor_id']) ? (int) $result['cursor_id'] : null;
-                $exhausted = $result['exhausted'] ?? true;
-
-                return new AsyncCursor($cursorId, $result['docs'], $exhausted);
-            }
-
-            throw new Exception\RuntimeException('Failed to create async cursor: ' . json_encode($result));
+            return new AsyncCursor(
+                isset($result['cursor_id']) ? (int) $result['cursor_id'] : null,
+                $result['docs'],
+                $result['exhausted'] ?? true,
+            );
         }
 
         $opts = $options ?: null;
@@ -219,15 +220,15 @@ class Collection
     {
         $pipeline = self::prepareBSON($pipeline);
         if (AsyncBridge::isCoroutineMode()) {
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'aggregate_cursor', [], $pipeline);
-            if (is_array($result) && isset($result['docs'])) {
-                $cursorId = isset($result['cursor_id']) ? (int) $result['cursor_id'] : null;
-                $exhausted = $result['exhausted'] ?? true;
+            $result = self::awaitBatch(
+                zealphp_mongodb_aggregate_cursor_async($this->poolId, $this->dbName, $this->colName, $pipeline)
+            );
 
-                return new AsyncCursor($cursorId, $result['docs'], $exhausted);
-            }
-
-            throw new Exception\RuntimeException('Failed to create async cursor: ' . json_encode($result));
+            return new AsyncCursor(
+                isset($result['cursor_id']) ? (int) $result['cursor_id'] : null,
+                $result['docs'],
+                $result['exhausted'] ?? true,
+            );
         }
 
         $opts = $options ?: null;
@@ -457,6 +458,18 @@ class Collection
     public function getTypeMap(): array
     {
         return ['root' => BSONDocument::class, 'document' => BSONDocument::class, 'array' => BSONArray::class];
+    }
+
+    public static function awaitBatch(array $async): array
+    {
+        $efd = $async['efd'];
+        $taskId = $async['task_id'];
+
+        \OpenSwoole\Coroutine\System::waitEvent($efd, OPENSWOOLE_EVENT_READ, 30);
+        $result = zealphp_mongodb_batch_result($taskId);
+        zealphp_mongodb_close_efd($efd);
+
+        return $result;
     }
 
     public static function wrapDoc(mixed $data): mixed

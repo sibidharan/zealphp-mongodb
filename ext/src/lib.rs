@@ -518,7 +518,7 @@ pub fn zealphp_mongodb_cursor_next_batch_async(cursor_id: i64, batch_size: i64) 
         return Err(PhpException::default("Failed to create eventfd".to_string()));
     }
 
-    coroutine::spawn_task(
+    coroutine::spawn_batch_task(
         async move {
             use futures::StreamExt;
             let mut cur = cursor_arc.lock().await;
@@ -526,20 +526,181 @@ pub fn zealphp_mongodb_cursor_next_batch_async(cursor_id: i64, batch_size: i64) 
             let mut exhausted = false;
             for _ in 0..batch {
                 match cur.next().await {
-                    Some(Ok(doc)) => {
-                        docs.push(serde_json::to_string(&doc).unwrap_or_else(|_| "{}".to_string()));
-                    }
+                    Some(Ok(doc)) => docs.push(doc),
                     Some(Err(e)) => {
-                        let escaped = e.to_string().replace('\\', "\\\\").replace('"', "\\\"");
-                        return format!("{{\"__error\":\"{}\"}}", escaped);
+                        return async_store::BatchResult {
+                            docs: Vec::new(), exhausted: true, cursor_id: None,
+                            error: Some(e.to_string()),
+                        };
                     }
-                    None => {
-                        exhausted = true;
-                        break;
-                    }
+                    None => { exhausted = true; break; }
                 }
             }
-            format!("{{\"docs\":[{}],\"exhausted\":{}}}", docs.join(","), exhausted)
+            async_store::BatchResult { docs, exhausted, cursor_id: None, error: None }
+        },
+        task_id,
+        efd,
+    );
+
+    let mut result = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut efd_zval = Zval::new();
+    efd_zval.set_long(efd as i64);
+    let _ = ht.insert("efd", efd_zval);
+    let mut tid_zval = Zval::new();
+    tid_zval.set_long(task_id as i64);
+    let _ = ht.insert("task_id", tid_zval);
+    result.set_hashtable(ht);
+    Ok(result)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_batch_result(task_id: i64) -> PhpResult<Zval> {
+    let batch = async_store::take_batch(task_id as u64)
+        .ok_or_else(|| PhpException::default(format!("No batch result for task {}", task_id)))?;
+
+    if let Some(err) = batch.error {
+        return Err(PhpException::default(format!("Cursor error: {}", err)));
+    }
+
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+
+    let mut docs_ht = ZendHashTable::new();
+    for (i, doc) in batch.docs.iter().enumerate() {
+        let _ = docs_ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+    }
+    let mut docs_zval = Zval::new();
+    docs_zval.set_hashtable(docs_ht);
+    let _ = ht.insert("docs", docs_zval);
+
+    let mut ex = Zval::new();
+    ex.set_bool(batch.exhausted);
+    let _ = ht.insert("exhausted", ex);
+
+    if let Some(cid) = batch.cursor_id {
+        let mut cid_zval = Zval::new();
+        cid_zval.set_long(cid as i64);
+        let _ = ht.insert("cursor_id", cid_zval);
+    }
+
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_find_cursor_async(
+    pool_id: i64,
+    db: &str,
+    col: &str,
+    filter: &Zval,
+    opts: Option<&Zval>,
+) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
+    let find_opts = parse_find_options(opts);
+
+    let task_id = async_store::new_task_id();
+    let efd = coroutine::create_eventfd();
+    if efd < 0 {
+        return Err(PhpException::default("Failed to create eventfd".to_string()));
+    }
+
+    let db_s = db.to_string();
+    let col_s = col.to_string();
+
+    coroutine::spawn_batch_task(
+        async move {
+            use futures::StreamExt;
+            let collection = client.database(&db_s).collection::<bson::Document>(&col_s);
+            match collection.find(filter_doc).with_options(find_opts).await {
+                Ok(mut cursor) => {
+                    let mut docs = Vec::with_capacity(100);
+                    let mut exhausted = false;
+                    for _ in 0..100 {
+                        match cursor.next().await {
+                            Some(Ok(doc)) => docs.push(doc),
+                            Some(Err(e)) => {
+                                return async_store::BatchResult {
+                                    docs: Vec::new(), exhausted: true, cursor_id: None,
+                                    error: Some(e.to_string()),
+                                };
+                            }
+                            None => { exhausted = true; break; }
+                        }
+                    }
+                    let cursor_id = if exhausted { None } else { Some(cursor::store_cursor(cursor)) };
+                    async_store::BatchResult { docs, exhausted, cursor_id, error: None }
+                }
+                Err(e) => async_store::BatchResult {
+                    docs: Vec::new(), exhausted: true, cursor_id: None,
+                    error: Some(e.to_string()),
+                },
+            }
+        },
+        task_id,
+        efd,
+    );
+
+    let mut result = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut efd_zval = Zval::new();
+    efd_zval.set_long(efd as i64);
+    let _ = ht.insert("efd", efd_zval);
+    let mut tid_zval = Zval::new();
+    tid_zval.set_long(task_id as i64);
+    let _ = ht.insert("task_id", tid_zval);
+    result.set_hashtable(ht);
+    Ok(result)
+}
+
+#[php_function]
+pub fn zealphp_mongodb_aggregate_cursor_async(
+    pool_id: i64,
+    db: &str,
+    col: &str,
+    pipeline: &Zval,
+) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let pipeline_docs = bson_convert::php_to_pipeline(pipeline).map_err(|e| PhpException::default(e))?;
+
+    let task_id = async_store::new_task_id();
+    let efd = coroutine::create_eventfd();
+    if efd < 0 {
+        return Err(PhpException::default("Failed to create eventfd".to_string()));
+    }
+
+    let db_s = db.to_string();
+    let col_s = col.to_string();
+
+    coroutine::spawn_batch_task(
+        async move {
+            use futures::StreamExt;
+            let collection = client.database(&db_s).collection::<bson::Document>(&col_s);
+            match collection.aggregate(pipeline_docs).await {
+                Ok(mut cursor) => {
+                    let mut docs = Vec::with_capacity(100);
+                    let mut exhausted = false;
+                    for _ in 0..100 {
+                        match cursor.next().await {
+                            Some(Ok(doc)) => docs.push(doc),
+                            Some(Err(e)) => {
+                                return async_store::BatchResult {
+                                    docs: Vec::new(), exhausted: true, cursor_id: None,
+                                    error: Some(e.to_string()),
+                                };
+                            }
+                            None => { exhausted = true; break; }
+                        }
+                    }
+                    let cursor_id = if exhausted { None } else { Some(cursor::store_cursor(cursor)) };
+                    async_store::BatchResult { docs, exhausted, cursor_id, error: None }
+                }
+                Err(e) => async_store::BatchResult {
+                    docs: Vec::new(), exhausted: true, cursor_id: None,
+                    error: Some(e.to_string()),
+                },
+            }
         },
         task_id,
         efd,

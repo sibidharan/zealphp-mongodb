@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use OpenSwoole\Coroutine;
-use OpenSwoole\Coroutine\Channel;
-use OpenSwoole\Event;
 
 use function class_exists;
 use function json_decode;
@@ -51,22 +49,10 @@ class AsyncBridge
         $async = zealphp_mongodb_exec_async($poolId, $db, $col, $op, $filterOrDoc, $updateOrPipeline);
         $efd = $async['efd'];
         $taskId = $async['task_id'];
-        $chan = new Channel(1);
 
-        Event::add($efd, static function ($fd) use ($chan, $taskId, $efd) {
-            $json = zealphp_mongodb_async_result($taskId);
-            Event::del($efd);
-            zealphp_mongodb_close_efd($efd);
-            $chan->push($json);
-        });
-
-        $json = $chan->pop(30.0);
-        if ($json === false) {
-            Event::del($efd);
-            zealphp_mongodb_close_efd($efd);
-
-            throw new Exception\RuntimeException("MongoDB async timeout for $op");
-        }
+        Coroutine\System::waitEvent($efd, OPENSWOOLE_EVENT_READ, 30);
+        $json = zealphp_mongodb_async_result($taskId);
+        zealphp_mongodb_close_efd($efd);
 
         return json_decode($json, true);
     }
