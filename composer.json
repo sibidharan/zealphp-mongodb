@@ -1,0 +1,26 @@
+{
+    "name": "zealphp/mongodb",
+    "description": "Async MongoDB driver for ZealPHP — Rust extension with PHP OOP library, non-blocking via eventfd + OpenSwoole coroutines",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["mongodb", "async", "rust", "zealphp", "openswoole", "coroutine", "eventfd"],
+    "homepage": "https://github.com/sibidharan/zealphp-mongodb",
+    "authors": [
+        {
+            "name": "Sibidharan",
+            "email": "sibidharan@selfmade.ninja"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "ZealPHP\\MongoDB\\": "php/src/"
+        }
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-zealphp-mongodb-ext": "*"
+    },
+    "suggest": {
+        "ext-openswoole": "Required for async coroutine mode (non-blocking MongoDB)"
+    }
+}
