@@ -35,7 +35,7 @@ pub fn next_doc(cursor_id: u64) -> Result<Option<Document>, String> {
             .ok_or_else(|| format!("Invalid cursor ID: {}", cursor_id))?
     };
 
-    coroutine::run_async(async move {
+    coroutine::run_sync(async move {
         let mut cursor = cursor_arc.lock().await;
         match cursor.next().await {
             Some(Ok(doc)) => Ok(Some(doc)),
