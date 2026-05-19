@@ -452,8 +452,8 @@ pub fn zealphp_mongodb_cursor_next(cursor_id: i64) -> PhpResult<Zval> {
 }
 
 #[php_function]
-pub fn zealphp_mongodb_cursor_close(cursor_id: i64) -> PhpResult<()> {
-    cursor::remove(cursor_id as u64).map_err(|e| PhpException::default(e))
+pub fn zealphp_mongodb_cursor_close(cursor_id: i64) {
+    cursor::remove(cursor_id as u64);
 }
 
 #[php_function]

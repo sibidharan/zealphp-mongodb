@@ -71,11 +71,6 @@ pub fn drain_to_vec(cursor_id: u64) -> Result<Vec<Document>, String> {
     })
 }
 
-pub fn remove(cursor_id: u64) -> Result<(), String> {
-    CURSORS
-        .write()
-        .unwrap()
-        .remove(&cursor_id)
-        .map(|_| ())
-        .ok_or_else(|| format!("Invalid cursor ID: {}", cursor_id))
+pub fn remove(cursor_id: u64) {
+    CURSORS.write().unwrap().remove(&cursor_id);
 }
