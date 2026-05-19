@@ -1,14 +1,22 @@
-use bson::Document;
+use bson::{Bson, Document};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
-    static ref RESULTS: Mutex<HashMap<u64, String>> = Mutex::new(HashMap::new());
+    static ref RESULTS: Mutex<HashMap<u64, AsyncResult>> = Mutex::new(HashMap::new());
     static ref BATCH_RESULTS: Mutex<HashMap<u64, BatchResult>> = Mutex::new(HashMap::new());
 }
 
 static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
+
+pub enum AsyncResult {
+    Doc(Option<Document>),
+    Scalar(Document),
+    Values(Vec<Bson>),
+    Docs(Vec<Document>),
+    Error(String),
+}
 
 pub struct BatchResult {
     pub docs: Vec<Document>,
@@ -21,11 +29,11 @@ pub fn new_task_id() -> u64 {
     NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst)
 }
 
-pub fn store_result(task_id: u64, json: String) {
-    RESULTS.lock().unwrap().insert(task_id, json);
+pub fn store_result(task_id: u64, result: AsyncResult) {
+    RESULTS.lock().unwrap().insert(task_id, result);
 }
 
-pub fn take_result(task_id: u64) -> Option<String> {
+pub fn take_result(task_id: u64) -> Option<AsyncResult> {
     RESULTS.lock().unwrap().remove(&task_id)
 }
 

@@ -7,7 +7,6 @@ namespace ZealPHP\MongoDB;
 use OpenSwoole\Coroutine;
 
 use function class_exists;
-use function json_decode;
 use function zealphp_mongodb_async_result;
 use function zealphp_mongodb_close_efd;
 use function zealphp_mongodb_count_documents;
@@ -24,6 +23,8 @@ use function zealphp_mongodb_insert_one;
 use function zealphp_mongodb_replace_one;
 use function zealphp_mongodb_update_many;
 use function zealphp_mongodb_update_one;
+
+use const OPENSWOOLE_EVENT_READ;
 
 class AsyncBridge
 {
@@ -51,10 +52,10 @@ class AsyncBridge
         $taskId = $async['task_id'];
 
         Coroutine\System::waitEvent($efd, OPENSWOOLE_EVENT_READ, 30);
-        $json = zealphp_mongodb_async_result($taskId);
+        $result = zealphp_mongodb_async_result($taskId);
         zealphp_mongodb_close_efd($efd);
 
-        return json_decode($json, true);
+        return $result;
     }
 
     private static function execSync(

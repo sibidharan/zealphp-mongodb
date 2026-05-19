@@ -49,15 +49,13 @@ fn signal_eventfd(fd: i32) {
     }
 }
 
-/// Spawn a generic async task. The future must produce a JSON string result.
-/// Returns (eventfd, task_id). Signals eventfd when done.
 pub fn spawn_task<F>(future: F, task_id: u64, efd: i32)
 where
-    F: std::future::Future<Output = String> + Send + 'static,
+    F: std::future::Future<Output = async_store::AsyncResult> + Send + 'static,
 {
     runtime().spawn(async move {
-        let json = future.await;
-        async_store::store_result(task_id, json);
+        let result = future.await;
+        async_store::store_result(task_id, result);
         signal_eventfd(efd);
     });
 }

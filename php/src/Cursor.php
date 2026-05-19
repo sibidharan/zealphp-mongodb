@@ -8,6 +8,7 @@ use Iterator;
 
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
+use function zealphp_mongodb_cursor_to_array;
 
 class Cursor implements Iterator
 {
@@ -54,19 +55,17 @@ class Cursor implements Iterator
     public function toArray(): array
     {
         $results = [];
-        if (! $this->started) {
-            $this->rewind();
-        }
-
-        if ($this->current !== null) {
+        if ($this->started && $this->current !== null) {
             $results[] = $this->current;
         }
 
-        while (($doc = zealphp_mongodb_cursor_next($this->cursorId)) !== null) {
+        $raw = zealphp_mongodb_cursor_to_array($this->cursorId);
+        foreach ($raw as $doc) {
             $results[] = Collection::wrapDoc($doc);
         }
 
         $this->current = null;
+        $this->started = true;
 
         return $results;
     }

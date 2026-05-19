@@ -39,9 +39,12 @@ function zealphp_mongodb_drop_indexes(int $poolId, string $dbName, string $colNa
 
 function zealphp_mongodb_cursor_next(int $cursorId): ?array {}
 function zealphp_mongodb_cursor_close(int $cursorId): void {}
+function zealphp_mongodb_cursor_to_array(int $cursorId): array {}
+function zealphp_mongodb_cursor_next_batch_async(int $cursorId, int $batchSize): array {}
 
 function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline = null): array {}
-function zealphp_mongodb_async_result(int $taskId): ?string {}
+function zealphp_mongodb_async_result(int $taskId): mixed {}
+function zealphp_mongodb_batch_result(int $taskId): array {}
 function zealphp_mongodb_close_efd(int $efd): void {}
 
 namespace MongoDB\Model {
@@ -50,4 +53,25 @@ namespace MongoDB\Model {
 
     /** @template-extends \ArrayObject<int, mixed> */
     class BSONArray extends \ArrayObject {}
+}
+
+namespace OpenSwoole {
+    class Coroutine {
+        public static function getCid(): int {}
+    }
+}
+
+namespace OpenSwoole\Coroutine {
+    class System {
+        public static function waitEvent(int $fd, int $events = OPENSWOOLE_EVENT_READ, float $timeout = -1): int|false {}
+    }
+}
+
+namespace OpenSwoole {
+    class Event {
+    }
+}
+
+namespace {
+    const OPENSWOOLE_EVENT_READ = 512;
 }

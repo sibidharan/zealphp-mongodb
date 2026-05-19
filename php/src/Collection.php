@@ -9,6 +9,7 @@ use MongoDB\BSON\Regex;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
+use OpenSwoole\Coroutine\System;
 use ZealPHP\MongoDB\BSON\Binary;
 use ZealPHP\MongoDB\BSON\Decimal128;
 use ZealPHP\MongoDB\BSON\Int64;
@@ -26,6 +27,8 @@ use function hexdec;
 use function is_array;
 use function is_object;
 use function zealphp_mongodb_aggregate;
+use function zealphp_mongodb_batch_result;
+use function zealphp_mongodb_close_efd;
 use function zealphp_mongodb_count_documents;
 use function zealphp_mongodb_create_index;
 use function zealphp_mongodb_delete_many;
@@ -47,10 +50,8 @@ use function zealphp_mongodb_replace_one;
 use function zealphp_mongodb_run_command;
 use function zealphp_mongodb_update_many;
 use function zealphp_mongodb_update_one;
-use function zealphp_mongodb_find_cursor_async;
-use function zealphp_mongodb_aggregate_cursor_async;
-use function zealphp_mongodb_batch_result;
-use function zealphp_mongodb_close_efd;
+
+use const OPENSWOOLE_EVENT_READ;
 
 class Collection
 {
@@ -65,35 +66,14 @@ class Collection
     public function findOne(array|object $filter = [], array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one', $filter));
-        }
-
         $opts = $options ?: null;
 
         return self::wrapDoc(zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
 
-    public function find(array|object $filter = [], array $options = []): Cursor|AsyncCursor
+    public function find(array|object $filter = [], array $options = []): Cursor
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            $opts = $options ? self::prepareBSON($options) : null;
-            $result = self::awaitBatch(
-                zealphp_mongodb_find_cursor_async($this->poolId, $this->dbName, $this->colName, $filter, $opts)
-            );
-
-            return new AsyncCursor(
-                isset($result['cursor_id']) ? (int) $result['cursor_id'] : null,
-                $result['docs'],
-                $result['exhausted'] ?? true,
-            );
-        }
-
         $opts = $options ?: null;
         $cursorId = zealphp_mongodb_find($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
@@ -103,10 +83,6 @@ class Collection
     public function insertOne(array|object $document, array $options = []): InsertOneResult
     {
         $document = self::prepareBSON((array) $document);
-        if (AsyncBridge::isCoroutineMode()) {
-            return new InsertOneResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'insert_one', $document) ?? []);
-        }
-
         $opts = null;
 
         return new InsertOneResult(zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts));
@@ -116,14 +92,6 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'update_one', $filter, $update));
-        }
-
         $opts = $options ?: null;
 
         return new UpdateResult(zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
@@ -133,14 +101,6 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'update_many', $filter, $update));
-        }
-
         $opts = $options ?: null;
 
         return new UpdateResult(zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
@@ -149,10 +109,6 @@ class Collection
     public function deleteOne(array|object $filter, array $options = []): DeleteResult
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            return new DeleteResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'delete_one', $filter));
-        }
-
         $opts = null;
 
         return new DeleteResult(zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
@@ -161,10 +117,6 @@ class Collection
     public function deleteMany(array|object $filter, array $options = []): DeleteResult
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            return new DeleteResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'delete_many', $filter));
-        }
-
         $opts = null;
 
         return new DeleteResult(zealphp_mongodb_delete_many($this->poolId, $this->dbName, $this->colName, $filter, $opts));
@@ -174,14 +126,6 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $replacement = self::prepareBSON((array) $replacement);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return new UpdateResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'replace_one', $filter, $replacement));
-        }
-
         $opts = $options ?: null;
 
         return new UpdateResult(zealphp_mongodb_replace_one($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
@@ -190,12 +134,6 @@ class Collection
     public function countDocuments(array|object $filter = [], array $options = []): int
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'count_documents', $filter);
-
-            return $result['count'] ?? 0;
-        }
-
         $opts = null;
 
         return zealphp_mongodb_count_documents($this->poolId, $this->dbName, $this->colName, $filter, $opts);
@@ -204,33 +142,14 @@ class Collection
     public function distinct(string $fieldName, array|object $filter = [], array $options = []): array
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            $filterWithField = array_merge($filter, ['__field' => $fieldName]);
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'distinct', $filterWithField);
-
-            return $result ?? [];
-        }
-
         $opts = null;
 
         return zealphp_mongodb_distinct($this->poolId, $this->dbName, $this->colName, $fieldName, $filter, $opts);
     }
 
-    public function aggregate(array $pipeline, array $options = []): Cursor|AsyncCursor
+    public function aggregate(array $pipeline, array $options = []): Cursor
     {
         $pipeline = self::prepareBSON($pipeline);
-        if (AsyncBridge::isCoroutineMode()) {
-            $result = self::awaitBatch(
-                zealphp_mongodb_aggregate_cursor_async($this->poolId, $this->dbName, $this->colName, $pipeline)
-            );
-
-            return new AsyncCursor(
-                isset($result['cursor_id']) ? (int) $result['cursor_id'] : null,
-                $result['docs'],
-                $result['exhausted'] ?? true,
-            );
-        }
-
         $opts = $options ?: null;
         $cursorId = zealphp_mongodb_aggregate($this->poolId, $this->dbName, $this->colName, $pipeline, $opts);
 
@@ -241,14 +160,6 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_update', $filter, $update));
-        }
-
         $opts = $options ?: null;
 
         return self::wrapDoc(zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
@@ -257,10 +168,6 @@ class Collection
     public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
-        if (AsyncBridge::isCoroutineMode()) {
-            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_delete', $filter));
-        }
-
         $opts = null;
 
         return self::wrapDoc(zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts));
@@ -270,14 +177,6 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $replacement = self::prepareBSON((array) $replacement);
-        if (AsyncBridge::isCoroutineMode()) {
-            if ($options) {
-                $filter['__options'] = $options;
-            }
-
-            return self::wrapDoc(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'find_one_and_replace', $filter, $replacement));
-        }
-
         $opts = $options ?: null;
 
         return self::wrapDoc(zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
@@ -294,10 +193,6 @@ class Collection
     public function insertMany(array $documents, array $options = []): InsertManyResult
     {
         $docs = array_map(static fn ($d) => self::prepareBSON((array) $d), $documents);
-        if (AsyncBridge::isCoroutineMode()) {
-            return new InsertManyResult(AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'insert_many', ['__docs' => $docs]) ?? []);
-        }
-
         $opts = $options ?: null;
 
         return new InsertManyResult(zealphp_mongodb_insert_many($this->poolId, $this->dbName, $this->colName, $docs, $opts));
@@ -305,12 +200,6 @@ class Collection
 
     public function estimatedDocumentCount(array $options = []): int
     {
-        if (AsyncBridge::isCoroutineMode()) {
-            $result = AsyncBridge::exec($this->poolId, $this->dbName, $this->colName, 'estimated_document_count', []);
-
-            return $result['count'] ?? 0;
-        }
-
         return zealphp_mongodb_estimated_document_count($this->poolId, $this->dbName, $this->colName);
     }
 
@@ -460,12 +349,14 @@ class Collection
         return ['root' => BSONDocument::class, 'document' => BSONDocument::class, 'array' => BSONArray::class];
     }
 
+    /** @return array<string, mixed> */
     public static function awaitBatch(array $async): array
     {
         $efd = $async['efd'];
         $taskId = $async['task_id'];
 
-        \OpenSwoole\Coroutine\System::waitEvent($efd, OPENSWOOLE_EVENT_READ, 30);
+        System::waitEvent($efd, OPENSWOOLE_EVENT_READ, 30);
+        /** @var array<string, mixed> $result */
         $result = zealphp_mongodb_batch_result($taskId);
         zealphp_mongodb_close_efd($efd);
 
@@ -550,11 +441,11 @@ class Collection
     public static function prepareBSON(mixed $data): mixed
     {
         if ($data instanceof ObjectId) {
-            return ['$oid' => (string) $data];
+            return ['$oid' => $data->__toString()];
         }
 
         if ($data instanceof UTCDateTime) {
-            return ['$date' => ['$numberLong' => (string) $data]];
+            return ['$date' => ['$numberLong' => $data->__toString()]];
         }
 
         if ($data instanceof Regex) {

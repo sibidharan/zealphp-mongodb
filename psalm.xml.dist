@@ -30,6 +30,7 @@
                 <referencedClass name="MongoDB\Model\BSONArray"/>
                 <referencedClass name="OpenSwoole\Coroutine"/>
                 <referencedClass name="OpenSwoole\Coroutine\Channel"/>
+                <referencedClass name="OpenSwoole\Coroutine\System"/>
                 <referencedClass name="OpenSwoole\Event"/>
             </errorLevel>
         </UndefinedClass>

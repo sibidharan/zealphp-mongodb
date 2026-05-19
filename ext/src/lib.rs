@@ -457,9 +457,21 @@ pub fn zealphp_mongodb_cursor_close(cursor_id: i64) -> PhpResult<()> {
 }
 
 #[php_function]
+pub fn zealphp_mongodb_cursor_to_array(cursor_id: i64) -> PhpResult<Zval> {
+    let docs = cursor::drain_to_vec(cursor_id as u64).map_err(|e| PhpException::default(e))?;
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for (i, doc) in docs.iter().enumerate() {
+        let _ = ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+    }
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
+#[php_function]
 pub fn zealphp_mongodb_cursor_next_async(cursor_id: i64) -> PhpResult<Zval> {
     let cursor_arc = {
-        let cursors = cursor::get_store().lock().unwrap();
+        let cursors = cursor::get_store().read().unwrap();
         cursors
             .get(&(cursor_id as u64))
             .cloned()
@@ -472,17 +484,20 @@ pub fn zealphp_mongodb_cursor_next_async(cursor_id: i64) -> PhpResult<Zval> {
         return Err(PhpException::default("Failed to create eventfd".to_string()));
     }
 
-    coroutine::spawn_task(
+    coroutine::spawn_batch_task(
         async move {
             use futures::StreamExt;
             let mut cur = cursor_arc.lock().await;
             match cur.next().await {
-                Some(Ok(doc)) => serde_json::to_string(&doc).unwrap_or_else(|_| "{}".to_string()),
-                Some(Err(e)) => {
-                    let escaped = e.to_string().replace('\\', "\\\\").replace('"', "\\\"");
-                    format!("{{\"__error\":\"{}\"}}", escaped)
-                }
-                None => "null".to_string(),
+                Some(Ok(doc)) => async_store::BatchResult {
+                    docs: vec![doc], exhausted: false, cursor_id: None, error: None,
+                },
+                Some(Err(e)) => async_store::BatchResult {
+                    docs: Vec::new(), exhausted: true, cursor_id: None, error: Some(e.to_string()),
+                },
+                None => async_store::BatchResult {
+                    docs: Vec::new(), exhausted: true, cursor_id: None, error: None,
+                },
             }
         },
         task_id,
@@ -504,7 +519,7 @@ pub fn zealphp_mongodb_cursor_next_async(cursor_id: i64) -> PhpResult<Zval> {
 #[php_function]
 pub fn zealphp_mongodb_cursor_next_batch_async(cursor_id: i64, batch_size: i64) -> PhpResult<Zval> {
     let cursor_arc = {
-        let cursors = cursor::get_store().lock().unwrap();
+        let cursors = cursor::get_store().read().unwrap();
         cursors
             .get(&(cursor_id as u64))
             .cloned()
@@ -885,11 +900,36 @@ pub fn zealphp_mongodb_exec_async(
 #[php_function]
 pub fn zealphp_mongodb_async_result(task_id: i64) -> PhpResult<Zval> {
     match async_store::take_result(task_id as u64) {
-        Some(json) => {
-            let mut z = Zval::new();
-            z.set_string(&json, false).ok();
-            Ok(z)
-        }
+        Some(result) => match result {
+            async_store::AsyncResult::Doc(Some(doc)) => Ok(bson_convert::doc_to_php(&doc)),
+            async_store::AsyncResult::Doc(None) => {
+                let mut z = Zval::new();
+                z.set_null();
+                Ok(z)
+            }
+            async_store::AsyncResult::Scalar(doc) => Ok(bson_convert::doc_to_php(&doc)),
+            async_store::AsyncResult::Values(vals) => {
+                let mut zval = Zval::new();
+                let mut ht = ZendHashTable::new();
+                for (i, val) in vals.iter().enumerate() {
+                    let _ = ht.insert_at_index(i as u64, bson_convert::bson_to_zval(val));
+                }
+                zval.set_hashtable(ht);
+                Ok(zval)
+            }
+            async_store::AsyncResult::Docs(docs) => {
+                let mut zval = Zval::new();
+                let mut ht = ZendHashTable::new();
+                for (i, doc) in docs.iter().enumerate() {
+                    let _ = ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+                }
+                zval.set_hashtable(ht);
+                Ok(zval)
+            }
+            async_store::AsyncResult::Error(msg) => {
+                Err(PhpException::default(msg))
+            }
+        },
         None => {
             let mut z = Zval::new();
             z.set_null();

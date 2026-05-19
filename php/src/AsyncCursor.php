@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB;
 
 use Iterator;
 
+use function array_shift;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next_batch_async;
 
@@ -14,16 +15,14 @@ class AsyncCursor implements Iterator
     private Document|array|null $current = null;
     private int $key = -1;
     private bool $started = false;
-    private bool $exhausted;
-    private array $buffer;
-    private ?int $cursorId;
     private const BATCH_SIZE = 100;
 
-    public function __construct(?int $cursorId, array $initialDocs = [], bool $exhausted = false)
-    {
-        $this->cursorId = $cursorId;
-        $this->buffer = $initialDocs;
-        $this->exhausted = $exhausted;
+    /** @param array<int, mixed> $buffer */
+    public function __construct(
+        private readonly int|null $cursorId,
+        private array $buffer = [],
+        private bool $exhausted = false,
+    ) {
     }
 
     public function current(): Document|array|null
@@ -75,23 +74,27 @@ class AsyncCursor implements Iterator
         $this->fetchBatch();
 
         $this->key++;
-        if ($this->buffer) {
-            $this->current = Collection::wrapDoc(array_shift($this->buffer));
-        } else {
+        if (! $this->buffer) {
             $this->current = null;
+
+            return;
         }
+
+        $this->current = Collection::wrapDoc(array_shift($this->buffer));
     }
 
     private function fetchBatch(): void
     {
         $result = Collection::awaitBatch(
-            zealphp_mongodb_cursor_next_batch_async($this->cursorId, self::BATCH_SIZE)
+            zealphp_mongodb_cursor_next_batch_async($this->cursorId, self::BATCH_SIZE),
         );
 
         $this->buffer = $result['docs'] ?? [];
-        if ($result['exhausted'] ?? true) {
-            $this->exhausted = true;
+        if (! ($result['exhausted'] ?? true)) {
+            return;
         }
+
+        $this->exhausted = true;
     }
 
     public function toArray(): array
@@ -119,8 +122,10 @@ class AsyncCursor implements Iterator
 
     public function __destruct()
     {
-        if ($this->cursorId !== null) {
-            @zealphp_mongodb_cursor_close($this->cursorId);
+        if ($this->cursorId === null) {
+            return;
         }
+
+        @zealphp_mongodb_cursor_close($this->cursorId);
     }
 }
