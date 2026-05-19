@@ -1,6 +1,7 @@
 {
     "name": "zealphp/mongodb",
     "description": "Async MongoDB driver for OpenSwoole — drop-in replacement for mongodb/mongodb",
+    "version": "0.1.1",
     "type": "library",
     "license": "MIT",
     "require": {
