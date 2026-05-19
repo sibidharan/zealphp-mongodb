@@ -231,7 +231,8 @@ class Collection
 
     public function listIndexes(array $options = []): array
     {
-        return zealphp_mongodb_list_indexes($this->poolId, $this->dbName, $this->colName);
+        $raw = zealphp_mongodb_list_indexes($this->poolId, $this->dbName, $this->colName);
+        return array_map(fn($idx) => new IndexInfo(is_array($idx) ? $idx : (array)$idx), $raw);
     }
 
     public function dropIndex(string $indexName, array $options = []): array
