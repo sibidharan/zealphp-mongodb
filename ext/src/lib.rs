@@ -152,7 +152,7 @@ pub fn zealphp_mongodb_find_one(
     let result = ops::find_one_with_options(&client, db, col, filter_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
-        Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
         None => {
             let mut z = Zval::new();
             z.set_null();
@@ -316,7 +316,7 @@ pub fn zealphp_mongodb_aggregate(
         bson_convert::php_to_pipeline(pipeline).map_err(|e| PhpException::default(e))?;
     let mongo_cursor = ops::aggregate(&client, db, col, pipeline_docs)
         .map_err(|e| PhpException::default(e))?;
-    let cursor_id = cursor::store_cursor(mongo_cursor);
+    let cursor_id = cursor::store_doc_cursor(mongo_cursor);
     Ok(cursor_id as i64)
 }
 
@@ -359,7 +359,7 @@ pub fn zealphp_mongodb_find_one_and_update(
     let result = ops::find_one_and_update_with_options(&client, db, col, filter_doc, update_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
-        Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
         None => {
             let mut z = Zval::new();
             z.set_null();
@@ -381,7 +381,7 @@ pub fn zealphp_mongodb_find_one_and_delete(
     let result = ops::find_one_and_delete(&client, db, col, filter_doc)
         .map_err(|e| PhpException::default(e))?;
     match result {
-        Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
         None => {
             let mut z = Zval::new();
             z.set_null();
@@ -406,7 +406,7 @@ pub fn zealphp_mongodb_find_one_and_replace(
     let result = ops::find_one_and_replace_with_options(&client, db, col, filter_doc, replacement_doc, fo)
         .map_err(|e| PhpException::default(e))?;
     match result {
-        Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
         None => {
             let mut z = Zval::new();
             z.set_null();
@@ -442,7 +442,7 @@ pub fn zealphp_mongodb_create_index(
 pub fn zealphp_mongodb_cursor_next(cursor_id: i64) -> PhpResult<Zval> {
     let result = cursor::next_doc(cursor_id as u64).map_err(|e| PhpException::default(e))?;
     match result {
-        Some(doc) => Ok(bson_convert::doc_to_php(&doc)),
+        Some(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
         None => {
             let mut z = Zval::new();
             z.set_null();
@@ -462,7 +462,7 @@ pub fn zealphp_mongodb_cursor_to_array(cursor_id: i64) -> PhpResult<Zval> {
     let mut zval = Zval::new();
     let mut ht = ZendHashTable::new();
     for (i, doc) in docs.iter().enumerate() {
-        let _ = ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+        let _ = ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
     }
     zval.set_hashtable(ht);
     Ok(zval)
@@ -486,9 +486,8 @@ pub fn zealphp_mongodb_cursor_next_async(cursor_id: i64) -> PhpResult<Zval> {
 
     coroutine::spawn_batch_task(
         async move {
-            use futures::StreamExt;
             let mut cur = cursor_arc.lock().await;
-            match cur.next().await {
+            match cur.next_raw().await {
                 Some(Ok(doc)) => async_store::BatchResult {
                     docs: vec![doc], exhausted: false, cursor_id: None, error: None,
                 },
@@ -535,12 +534,11 @@ pub fn zealphp_mongodb_cursor_next_batch_async(cursor_id: i64, batch_size: i64) 
 
     coroutine::spawn_batch_task(
         async move {
-            use futures::StreamExt;
             let mut cur = cursor_arc.lock().await;
             let mut docs = Vec::with_capacity(batch);
             let mut exhausted = false;
             for _ in 0..batch {
-                match cur.next().await {
+                match cur.next_raw().await {
                     Some(Ok(doc)) => docs.push(doc),
                     Some(Err(e)) => {
                         return async_store::BatchResult {
@@ -583,7 +581,7 @@ pub fn zealphp_mongodb_batch_result(task_id: i64) -> PhpResult<Zval> {
 
     let mut docs_ht = ZendHashTable::new();
     for (i, doc) in batch.docs.iter().enumerate() {
-        let _ = docs_ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+        let _ = docs_ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
     }
     let mut docs_zval = Zval::new();
     docs_zval.set_hashtable(docs_ht);
@@ -627,7 +625,7 @@ pub fn zealphp_mongodb_find_cursor_async(
     coroutine::spawn_batch_task(
         async move {
             use futures::StreamExt;
-            let collection = client.database(&db_s).collection::<bson::Document>(&col_s);
+            let collection = client.database(&db_s).collection::<bson::raw::RawDocumentBuf>(&col_s);
             match collection.find(filter_doc).with_options(find_opts).await {
                 Ok(mut cursor) => {
                     let mut docs = Vec::with_capacity(100);
@@ -698,7 +696,15 @@ pub fn zealphp_mongodb_aggregate_cursor_async(
                     let mut exhausted = false;
                     for _ in 0..100 {
                         match cursor.next().await {
-                            Some(Ok(doc)) => docs.push(doc),
+                            Some(Ok(doc)) => match bson::raw::RawDocumentBuf::from_document(&doc) {
+                                Ok(raw) => docs.push(raw),
+                                Err(e) => {
+                                    return async_store::BatchResult {
+                                        docs: Vec::new(), exhausted: true, cursor_id: None,
+                                        error: Some(e.to_string()),
+                                    };
+                                }
+                            },
                             Some(Err(e)) => {
                                 return async_store::BatchResult {
                                     docs: Vec::new(), exhausted: true, cursor_id: None,
@@ -708,7 +714,7 @@ pub fn zealphp_mongodb_aggregate_cursor_async(
                             None => { exhausted = true; break; }
                         }
                     }
-                    let cursor_id = if exhausted { None } else { Some(cursor::store_cursor(cursor)) };
+                    let cursor_id = if exhausted { None } else { Some(cursor::store_doc_cursor(cursor)) };
                     async_store::BatchResult { docs, exhausted, cursor_id, error: None }
                 }
                 Err(e) => async_store::BatchResult {
@@ -901,13 +907,13 @@ pub fn zealphp_mongodb_exec_async(
 pub fn zealphp_mongodb_async_result(task_id: i64) -> PhpResult<Zval> {
     match async_store::take_result(task_id as u64) {
         Some(result) => match result {
-            async_store::AsyncResult::Doc(Some(doc)) => Ok(bson_convert::doc_to_php(&doc)),
+            async_store::AsyncResult::Doc(Some(doc)) => Ok(bson_convert::raw_doc_to_php(&doc)),
             async_store::AsyncResult::Doc(None) => {
                 let mut z = Zval::new();
                 z.set_null();
                 Ok(z)
             }
-            async_store::AsyncResult::Scalar(doc) => Ok(bson_convert::doc_to_php(&doc)),
+            async_store::AsyncResult::Scalar(doc) => Ok(bson_convert::raw_doc_to_php(&doc)),
             async_store::AsyncResult::Values(vals) => {
                 let mut zval = Zval::new();
                 let mut ht = ZendHashTable::new();
@@ -921,7 +927,7 @@ pub fn zealphp_mongodb_async_result(task_id: i64) -> PhpResult<Zval> {
                 let mut zval = Zval::new();
                 let mut ht = ZendHashTable::new();
                 for (i, doc) in docs.iter().enumerate() {
-                    let _ = ht.insert_at_index(i as u64, bson_convert::doc_to_php(doc));
+                    let _ = ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
                 }
                 zval.set_hashtable(ht);
                 Ok(zval)

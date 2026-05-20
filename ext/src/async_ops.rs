@@ -1,4 +1,5 @@
 use bson::{doc, Bson, Document};
+use bson::raw::RawDocumentBuf;
 use futures::StreamExt;
 use mongodb::Client;
 
@@ -13,7 +14,8 @@ pub async fn exec_async(
     filter_or_doc: Option<Document>,
     update_or_pipeline: Option<Vec<Document>>,
 ) -> AsyncResult {
-    let collection = client.database(&db).collection::<Document>(&col);
+    let read_col = client.database(&db).collection::<RawDocumentBuf>(&col);
+    let write_col = client.database(&db).collection::<Document>(&col);
     let (filter_or_doc, opts_doc) = extract_options(filter_or_doc);
 
     match op.as_str() {
@@ -22,7 +24,7 @@ pub async fn exec_async(
             let extra_opts = update_or_pipeline.and_then(|v| v.into_iter().next());
             let combined_opts = extra_opts.or(opts_doc);
             let find_opts = build_find_options(combined_opts.as_ref());
-            match collection.find(filter).with_options(find_opts).await {
+            match read_col.find(filter).with_options(find_opts).await {
                 Ok(mut cursor) => {
                     let mut docs = Vec::new();
                     while let Some(Ok(doc)) = cursor.next().await {
@@ -44,15 +46,15 @@ pub async fn exec_async(
                     fo.sort = Some(sort_doc.clone());
                 }
             }
-            match collection.find_one(filter).with_options(fo).await {
+            match read_col.find_one(filter).with_options(fo).await {
                 Ok(doc) => AsyncResult::Doc(doc),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "insert_one" => {
             let document = filter_or_doc.unwrap_or_default();
-            match collection.insert_one(document).await {
-                Ok(r) => AsyncResult::Scalar(doc! {
+            match write_col.insert_one(document).await {
+                Ok(r) => scalar_doc(doc! {
                     "inserted_id": r.inserted_id,
                     "acknowledged": true,
                     "inserted_count": 1_i64,
@@ -69,8 +71,8 @@ pub async fn exec_async(
                     uo.upsert = Some(upsert);
                 }
             }
-            match collection.update_one(filter, update).with_options(uo).await {
-                Ok(r) => AsyncResult::Scalar(update_result_doc(&r)),
+            match write_col.update_one(filter, update).with_options(uo).await {
+                Ok(r) => scalar_doc(update_result_doc(&r)),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -83,15 +85,15 @@ pub async fn exec_async(
                     uo.upsert = Some(upsert);
                 }
             }
-            match collection.update_many(filter, update).with_options(uo).await {
-                Ok(r) => AsyncResult::Scalar(update_result_doc(&r)),
+            match write_col.update_many(filter, update).with_options(uo).await {
+                Ok(r) => scalar_doc(update_result_doc(&r)),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "delete_one" => {
             let filter = filter_or_doc.unwrap_or_default();
-            match collection.delete_one(filter).await {
-                Ok(r) => AsyncResult::Scalar(doc! {
+            match write_col.delete_one(filter).await {
+                Ok(r) => scalar_doc(doc! {
                     "deleted_count": r.deleted_count as i64,
                     "acknowledged": true,
                 }),
@@ -100,8 +102,8 @@ pub async fn exec_async(
         }
         "delete_many" => {
             let filter = filter_or_doc.unwrap_or_default();
-            match collection.delete_many(filter).await {
-                Ok(r) => AsyncResult::Scalar(doc! {
+            match write_col.delete_many(filter).await {
+                Ok(r) => scalar_doc(doc! {
                     "deleted_count": r.deleted_count as i64,
                     "acknowledged": true,
                 }),
@@ -117,15 +119,15 @@ pub async fn exec_async(
                     ro.upsert = Some(upsert);
                 }
             }
-            match collection.replace_one(filter, replacement).with_options(ro).await {
-                Ok(r) => AsyncResult::Scalar(update_result_doc(&r)),
+            match write_col.replace_one(filter, replacement).with_options(ro).await {
+                Ok(r) => scalar_doc(update_result_doc(&r)),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "count_documents" => {
             let filter = filter_or_doc.unwrap_or_default();
-            match collection.count_documents(filter).await {
-                Ok(n) => AsyncResult::Scalar(doc! { "count": n as i64 }),
+            match write_col.count_documents(filter).await {
+                Ok(n) => scalar_doc(doc! { "count": n as i64 }),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -138,18 +140,21 @@ pub async fn exec_async(
             let filter = filter_or_doc
                 .map(|mut d| { d.remove("__field"); d })
                 .unwrap_or_default();
-            match collection.distinct(&field_name, filter).await {
+            match write_col.distinct(&field_name, filter).await {
                 Ok(values) => AsyncResult::Values(values),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "aggregate" => {
             let pipeline = update_or_pipeline.unwrap_or_default();
-            match collection.aggregate(pipeline).await {
+            match write_col.aggregate(pipeline).await {
                 Ok(mut cursor) => {
                     let mut docs = Vec::new();
                     while let Some(Ok(doc)) = cursor.next().await {
-                        docs.push(doc);
+                        match RawDocumentBuf::from_document(&doc) {
+                            Ok(raw) => docs.push(raw),
+                            Err(e) => return AsyncResult::Error(e.to_string()),
+                        }
                     }
                     AsyncResult::Docs(docs)
                 }
@@ -160,14 +165,14 @@ pub async fn exec_async(
             let filter = filter_or_doc.unwrap_or_default();
             let update = update_or_pipeline.and_then(|v| v.into_iter().next()).unwrap_or_default();
             let fo = build_find_and_modify_options(&opts_doc);
-            match collection.find_one_and_update(filter, update).with_options(fo).await {
+            match read_col.find_one_and_update(filter, update).with_options(fo).await {
                 Ok(doc) => AsyncResult::Doc(doc),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "find_one_and_delete" => {
             let filter = filter_or_doc.unwrap_or_default();
-            match collection.find_one_and_delete(filter).await {
+            match read_col.find_one_and_delete(filter).await {
                 Ok(doc) => AsyncResult::Doc(doc),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
@@ -186,8 +191,12 @@ pub async fn exec_async(
                     fo.upsert = Some(upsert);
                 }
             }
-            match collection.find_one_and_replace(filter, replacement).with_options(fo).await {
-                Ok(doc) => AsyncResult::Doc(doc),
+            match write_col.find_one_and_replace(filter, replacement).with_options(fo).await {
+                Ok(Some(doc)) => match RawDocumentBuf::from_document(&doc) {
+                    Ok(raw) => AsyncResult::Doc(Some(raw)),
+                    Err(e) => AsyncResult::Error(e.to_string()),
+                },
+                Ok(None) => AsyncResult::Doc(None),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -199,7 +208,7 @@ pub async fn exec_async(
                     }).collect::<Vec<_>>()
                 }).unwrap_or_default()
             }).unwrap_or_default();
-            match collection.insert_many(docs_bson).await {
+            match write_col.insert_many(docs_bson).await {
                 Ok(r) => {
                     let ids: Vec<Bson> = r.inserted_ids.into_values().collect();
                     let mut result = doc! {
@@ -207,14 +216,14 @@ pub async fn exec_async(
                         "inserted_count": ids.len() as i64,
                     };
                     result.insert("inserted_ids", Bson::Array(ids));
-                    AsyncResult::Scalar(result)
+                    scalar_doc(result)
                 }
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "estimated_document_count" => {
-            match collection.estimated_document_count().await {
-                Ok(n) => AsyncResult::Scalar(doc! { "count": n as i64 }),
+            match write_col.estimated_document_count().await {
+                Ok(n) => scalar_doc(doc! { "count": n as i64 }),
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -222,7 +231,12 @@ pub async fn exec_async(
             let cmd = filter_or_doc.unwrap_or_default();
             let database = client.database(&db);
             match database.run_command(cmd).await {
-                Ok(doc) => AsyncResult::Doc(Some(doc)),
+                Ok(doc) => {
+                    match RawDocumentBuf::from_document(&doc) {
+                        Ok(raw) => AsyncResult::Doc(Some(raw)),
+                        Err(e) => AsyncResult::Error(e.to_string()),
+                    }
+                }
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -231,15 +245,15 @@ pub async fn exec_async(
             let extra_opts = update_or_pipeline.and_then(|v| v.into_iter().next());
             let combined_opts = extra_opts.or(opts_doc);
             let find_opts = build_find_options(combined_opts.as_ref());
-            match collection.find(filter).with_options(find_opts).await {
+            match read_col.find(filter).with_options(find_opts).await {
                 Ok(mongo_cursor) => eager_batch_cursor(mongo_cursor).await,
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
         "aggregate_cursor" => {
             let pipeline = update_or_pipeline.unwrap_or_default();
-            match collection.aggregate(pipeline).await {
-                Ok(mongo_cursor) => eager_batch_cursor(mongo_cursor).await,
+            match write_col.aggregate(pipeline).await {
+                Ok(mongo_cursor) => eager_batch_cursor_doc(mongo_cursor).await,
                 Err(e) => AsyncResult::Error(e.to_string()),
             }
         }
@@ -312,9 +326,16 @@ fn update_result_doc(r: &mongodb::results::UpdateResult) -> Document {
     d
 }
 
+fn scalar_doc(d: Document) -> AsyncResult {
+    match RawDocumentBuf::from_document(&d) {
+        Ok(raw) => AsyncResult::Scalar(raw),
+        Err(e) => AsyncResult::Error(e.to_string()),
+    }
+}
+
 const EAGER_BATCH_SIZE: usize = 100;
 
-async fn eager_batch_cursor(mut mongo_cursor: mongodb::Cursor<Document>) -> AsyncResult {
+async fn eager_batch_cursor(mut mongo_cursor: mongodb::Cursor<RawDocumentBuf>) -> AsyncResult {
     let mut docs = Vec::with_capacity(EAGER_BATCH_SIZE);
     let mut exhausted = false;
 
@@ -328,12 +349,51 @@ async fn eager_batch_cursor(mut mongo_cursor: mongodb::Cursor<Document>) -> Asyn
 
     if exhausted {
         let mut result = doc! { "exhausted": true };
-        result.insert("docs", Bson::Array(docs.into_iter().map(Bson::Document).collect()));
-        AsyncResult::Scalar(result)
+        let bson_docs: Vec<Bson> = docs.iter().filter_map(|raw| {
+            bson::from_slice::<Document>(raw.as_bytes()).ok().map(Bson::Document)
+        }).collect();
+        result.insert("docs", Bson::Array(bson_docs));
+        scalar_doc(result)
     } else {
         let cursor_id = cursor::store_cursor(mongo_cursor);
         let mut result = doc! { "cursor_id": cursor_id as i64, "exhausted": false };
-        result.insert("docs", Bson::Array(docs.into_iter().map(Bson::Document).collect()));
-        AsyncResult::Scalar(result)
+        let bson_docs: Vec<Bson> = docs.iter().filter_map(|raw| {
+            bson::from_slice::<Document>(raw.as_bytes()).ok().map(Bson::Document)
+        }).collect();
+        result.insert("docs", Bson::Array(bson_docs));
+        scalar_doc(result)
+    }
+}
+
+async fn eager_batch_cursor_doc(mut mongo_cursor: mongodb::Cursor<Document>) -> AsyncResult {
+    let mut docs = Vec::with_capacity(EAGER_BATCH_SIZE);
+    let mut exhausted = false;
+
+    for _ in 0..EAGER_BATCH_SIZE {
+        match mongo_cursor.next().await {
+            Some(Ok(doc)) => match RawDocumentBuf::from_document(&doc) {
+                Ok(raw) => docs.push(raw),
+                Err(e) => return AsyncResult::Error(e.to_string()),
+            },
+            Some(Err(e)) => return AsyncResult::Error(e.to_string()),
+            None => { exhausted = true; break; }
+        }
+    }
+
+    if exhausted {
+        let mut result = doc! { "exhausted": true };
+        let bson_docs: Vec<Bson> = docs.iter().filter_map(|raw| {
+            bson::from_slice::<Document>(raw.as_bytes()).ok().map(Bson::Document)
+        }).collect();
+        result.insert("docs", Bson::Array(bson_docs));
+        scalar_doc(result)
+    } else {
+        let cursor_id = cursor::store_doc_cursor(mongo_cursor);
+        let mut result = doc! { "cursor_id": cursor_id as i64, "exhausted": false };
+        let bson_docs: Vec<Bson> = docs.iter().filter_map(|raw| {
+            bson::from_slice::<Document>(raw.as_bytes()).ok().map(Bson::Document)
+        }).collect();
+        result.insert("docs", Bson::Array(bson_docs));
+        scalar_doc(result)
     }
 }

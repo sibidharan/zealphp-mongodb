@@ -1,4 +1,5 @@
 use bson::Document;
+use bson::raw::RawDocumentBuf;
 use mongodb::Client;
 
 use crate::coroutine;
@@ -8,8 +9,8 @@ pub fn find_one(
     db: &str,
     col: &str,
     filter: Document,
-) -> Result<Option<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<Option<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one(filter).await })
 }
 
@@ -18,8 +19,8 @@ pub fn find(
     db: &str,
     col: &str,
     filter: Document,
-) -> Result<mongodb::Cursor<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<mongodb::Cursor<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find(filter).await })
 }
 
@@ -124,8 +125,8 @@ pub fn find_one_and_update(
     col: &str,
     filter: Document,
     update: Document,
-) -> Result<Option<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<Option<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one_and_update(filter, update).await })
 }
 
@@ -134,8 +135,8 @@ pub fn find_one_and_delete(
     db: &str,
     col: &str,
     filter: Document,
-) -> Result<Option<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<Option<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one_and_delete(filter).await })
 }
 
@@ -189,9 +190,20 @@ pub fn find_one_and_replace(
     col: &str,
     filter: Document,
     replacement: Document,
-) -> Result<Option<Document>, String> {
+) -> Result<Option<RawDocumentBuf>, String> {
     let collection = client.database(db).collection::<Document>(col);
-    coroutine::run_sync(async move { collection.find_one_and_replace(filter, replacement).await })
+    coroutine::run_sync(async move {
+        match collection.find_one_and_replace(filter, replacement).await
+            .map_err(|e| mongodb::error::Error::custom(e))?
+        {
+            Some(doc) => {
+                let raw = RawDocumentBuf::from_document(&doc)
+                    .map_err(|e| mongodb::error::Error::custom(e))?;
+                Ok::<_, mongodb::error::Error>(Some(raw))
+            }
+            None => Ok(None),
+        }
+    })
 }
 
 pub fn list_databases(client: &Client) -> Result<Vec<String>, String> {
@@ -273,15 +285,15 @@ pub fn list_collection_names(client: &Client, db: &str) -> Result<Vec<String>, S
 
 pub fn find_with_options(
     client: &Client, db: &str, col: &str, filter: Document, opts: mongodb::options::FindOptions,
-) -> Result<mongodb::Cursor<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<mongodb::Cursor<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find(filter).with_options(opts).await })
 }
 
 pub fn find_one_with_options(
     client: &Client, db: &str, col: &str, filter: Document, opts: mongodb::options::FindOneOptions,
-) -> Result<Option<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<Option<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one(filter).with_options(opts).await })
 }
 
@@ -308,14 +320,25 @@ pub fn replace_one_with_options(
 
 pub fn find_one_and_update_with_options(
     client: &Client, db: &str, col: &str, filter: Document, update: Document, opts: mongodb::options::FindOneAndUpdateOptions,
-) -> Result<Option<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+) -> Result<Option<RawDocumentBuf>, String> {
+    let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one_and_update(filter, update).with_options(opts).await })
 }
 
 pub fn find_one_and_replace_with_options(
     client: &Client, db: &str, col: &str, filter: Document, replacement: Document, opts: mongodb::options::FindOneAndReplaceOptions,
-) -> Result<Option<Document>, String> {
+) -> Result<Option<RawDocumentBuf>, String> {
     let collection = client.database(db).collection::<Document>(col);
-    coroutine::run_sync(async move { collection.find_one_and_replace(filter, replacement).with_options(opts).await })
+    coroutine::run_sync(async move {
+        match collection.find_one_and_replace(filter, replacement).with_options(opts).await
+            .map_err(|e| mongodb::error::Error::custom(e))?
+        {
+            Some(doc) => {
+                let raw = RawDocumentBuf::from_document(&doc)
+                    .map_err(|e| mongodb::error::Error::custom(e))?;
+                Ok::<_, mongodb::error::Error>(Some(raw))
+            }
+            None => Ok(None),
+        }
+    })
 }

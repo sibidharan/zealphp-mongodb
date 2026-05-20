@@ -1,4 +1,6 @@
 use bson::{Bson, Document};
+use bson::raw::{RawBsonRef, RawDocumentBuf};
+use bson::spec::ElementType;
 use ext_php_rs::types::{ZendHashTable, Zval};
 
 fn base64_decode(input: &str) -> Vec<u8> {
@@ -299,6 +301,190 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
         }
         Bson::MaxKey => {
             // Return extended JSON: {"$maxKey": 1}
+            let mut ht = ZendHashTable::new();
+            let mut one = Zval::new();
+            one.set_long(1);
+            let _ = ht.insert("$maxKey", one);
+            zval.set_hashtable(ht);
+        }
+        _ => {
+            zval.set_null();
+        }
+    }
+    zval
+}
+
+pub fn raw_doc_to_php(raw: &RawDocumentBuf) -> Zval {
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for result in raw.iter() {
+        if let Ok((key, val)) = result {
+            let _ = ht.insert(key, raw_bson_to_zval(val));
+        }
+    }
+    zval.set_hashtable(ht);
+    zval
+}
+
+fn raw_subdoc_to_php(raw: &bson::raw::RawDocument) -> Zval {
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for result in raw.iter() {
+        if let Ok((key, val)) = result {
+            let _ = ht.insert(key, raw_bson_to_zval(val));
+        }
+    }
+    zval.set_hashtable(ht);
+    zval
+}
+
+fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
+    let mut zval = Zval::new();
+    match val.element_type() {
+        ElementType::Null | ElementType::Undefined => {
+            zval.set_null();
+        }
+        ElementType::Boolean => {
+            if let RawBsonRef::Boolean(b) = val { zval.set_bool(b); }
+        }
+        ElementType::Int32 => {
+            if let RawBsonRef::Int32(i) = val { zval.set_long(i as i64); }
+        }
+        ElementType::Int64 => {
+            if let RawBsonRef::Int64(i) = val { zval.set_long(i); }
+        }
+        ElementType::Double => {
+            if let RawBsonRef::Double(f) = val { zval.set_double(f); }
+        }
+        ElementType::String => {
+            if let RawBsonRef::String(s) = val { let _ = zval.set_string(s, false); }
+        }
+        ElementType::ObjectId => {
+            if let RawBsonRef::ObjectId(oid) = val {
+                let mut ht = ZendHashTable::new();
+                let mut oid_zval = Zval::new();
+                let _ = oid_zval.set_string(&oid.to_hex(), false);
+                let _ = ht.insert("$oid", oid_zval);
+                zval.set_hashtable(ht);
+            }
+        }
+        ElementType::DateTime => {
+            if let RawBsonRef::DateTime(dt) = val {
+                let mut outer = ZendHashTable::new();
+                let mut inner = ZendHashTable::new();
+                let ms_str = dt.timestamp_millis().to_string();
+                let mut ms_zval = Zval::new();
+                let _ = ms_zval.set_string(&ms_str, false);
+                let _ = inner.insert("$numberLong", ms_zval);
+                let mut inner_zval = Zval::new();
+                inner_zval.set_hashtable(inner);
+                let _ = outer.insert("$date", inner_zval);
+                zval.set_hashtable(outer);
+            }
+        }
+        ElementType::EmbeddedDocument => {
+            if let RawBsonRef::Document(doc) = val {
+                return raw_subdoc_to_php(doc);
+            }
+        }
+        ElementType::Array => {
+            if let RawBsonRef::Array(arr) = val {
+                let mut ht = ZendHashTable::new();
+                for (i, result) in arr.into_iter().enumerate() {
+                    if let Ok(v) = result {
+                        let _ = ht.insert_at_index(i as u64, raw_bson_to_zval(v));
+                    }
+                }
+                zval.set_hashtable(ht);
+            }
+        }
+        ElementType::Binary => {
+            if let RawBsonRef::Binary(bin) = val {
+                let mut outer = ZendHashTable::new();
+                let mut inner = ZendHashTable::new();
+                let b64 = base64_encode(bin.bytes);
+                let sub_type = format!("{:02x}", u8::from(bin.subtype));
+                let mut b64_zval = Zval::new();
+                let _ = b64_zval.set_string(&b64, false);
+                let _ = inner.insert("base64", b64_zval);
+                let mut st_zval = Zval::new();
+                let _ = st_zval.set_string(&sub_type, false);
+                let _ = inner.insert("subType", st_zval);
+                let mut inner_zval = Zval::new();
+                inner_zval.set_hashtable(inner);
+                let _ = outer.insert("$binary", inner_zval);
+                zval.set_hashtable(outer);
+            }
+        }
+        ElementType::RegularExpression => {
+            if let RawBsonRef::RegularExpression(re) = val {
+                let mut outer = ZendHashTable::new();
+                let mut inner = ZendHashTable::new();
+                let mut p_zval = Zval::new();
+                let _ = p_zval.set_string(re.pattern, false);
+                let _ = inner.insert("pattern", p_zval);
+                let mut o_zval = Zval::new();
+                let _ = o_zval.set_string(re.options, false);
+                let _ = inner.insert("options", o_zval);
+                let mut inner_zval = Zval::new();
+                inner_zval.set_hashtable(inner);
+                let _ = outer.insert("$regularExpression", inner_zval);
+                zval.set_hashtable(outer);
+            }
+        }
+        ElementType::Timestamp => {
+            if let RawBsonRef::Timestamp(ts) = val {
+                let mut outer = ZendHashTable::new();
+                let mut inner = ZendHashTable::new();
+                let mut t_zval = Zval::new();
+                t_zval.set_long(ts.time as i64);
+                let _ = inner.insert("t", t_zval);
+                let mut i_zval = Zval::new();
+                i_zval.set_long(ts.increment as i64);
+                let _ = inner.insert("i", i_zval);
+                let mut inner_zval = Zval::new();
+                inner_zval.set_hashtable(inner);
+                let _ = outer.insert("$timestamp", inner_zval);
+                zval.set_hashtable(outer);
+            }
+        }
+        ElementType::Decimal128 => {
+            if let RawBsonRef::Decimal128(d) = val {
+                let mut ht = ZendHashTable::new();
+                let mut d_zval = Zval::new();
+                let _ = d_zval.set_string(&d.to_string(), false);
+                let _ = ht.insert("$numberDecimal", d_zval);
+                zval.set_hashtable(ht);
+            }
+        }
+        ElementType::JavaScriptCode => {
+            if let RawBsonRef::JavaScriptCode(code) = val {
+                let mut ht = ZendHashTable::new();
+                let mut code_zval = Zval::new();
+                let _ = code_zval.set_string(code, false);
+                let _ = ht.insert("$code", code_zval);
+                zval.set_hashtable(ht);
+            }
+        }
+        ElementType::JavaScriptCodeWithScope => {
+            if let RawBsonRef::JavaScriptCodeWithScope(jsc) = val {
+                let mut ht = ZendHashTable::new();
+                let mut code_zval = Zval::new();
+                let _ = code_zval.set_string(jsc.code, false);
+                let _ = ht.insert("$code", code_zval);
+                let scope_zval = raw_subdoc_to_php(jsc.scope);
+                let _ = ht.insert("$scope", scope_zval);
+                zval.set_hashtable(ht);
+            }
+        }
+        ElementType::MinKey => {
+            let mut ht = ZendHashTable::new();
+            let mut one = Zval::new();
+            one.set_long(1);
+            let _ = ht.insert("$minKey", one);
+            zval.set_hashtable(ht);
+        }
+        ElementType::MaxKey => {
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);

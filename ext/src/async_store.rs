@@ -1,4 +1,5 @@
-use bson::{Bson, Document};
+use bson::Bson;
+use bson::raw::RawDocumentBuf;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -11,15 +12,15 @@ lazy_static::lazy_static! {
 static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
 
 pub enum AsyncResult {
-    Doc(Option<Document>),
-    Scalar(Document),
+    Doc(Option<RawDocumentBuf>),
+    Scalar(RawDocumentBuf),
     Values(Vec<Bson>),
-    Docs(Vec<Document>),
+    Docs(Vec<RawDocumentBuf>),
     Error(String),
 }
 
 pub struct BatchResult {
-    pub docs: Vec<Document>,
+    pub docs: Vec<RawDocumentBuf>,
     pub exhausted: bool,
     pub cursor_id: Option<u64>,
     pub error: Option<String>,
