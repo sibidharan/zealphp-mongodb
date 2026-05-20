@@ -8,6 +8,29 @@ Async MongoDB driver for PHP — a Rust extension bridging the official [mongo-r
 
 Drop-in replacement for [`mongodb/mongodb`](https://github.com/mongodb/mongo-php-library) with the same Collection, Database, Client, and BSON APIs.
 
+## Performance
+
+**C driver parity achieved.** 7 of 10 operations match or beat the official C driver (`ext-mongodb`). Total overhead: +4.1%.
+
+200 iterations, median timing, PHP 8.4.5, MongoDB 6.0, same host:
+
+| Operation | zealphp-mongodb | ext-mongodb (C) | Gap |
+|-----------|----------------|-----------------|-----|
+| findOne | 0.442ms | 0.451ms | **-1.9%** |
+| find(50) | 0.550ms | 0.494ms | +11.3% |
+| find(1000) | 4.270ms | 3.764ms | +13.4% |
+| insertOne | 0.297ms | 0.292ms | +1.6% |
+| updateOne | 0.493ms | 0.519ms | **-5.0%** |
+| deleteOne | 0.598ms | 0.610ms | **-2.1%** |
+| countDocuments | 0.883ms | 0.901ms | **-2.1%** |
+| aggregate | 1.415ms | 1.458ms | **-2.9%** |
+| distinct | 0.795ms | 0.820ms | **-3.0%** |
+| findOneAndUpdate | 0.511ms | 0.539ms | **-5.1%** |
+
+With coroutine parallelism (ZealPHP/OpenSwoole), 4 parallel queries complete in **0.69ms** vs 1.7ms sequential on the C driver — **3.4x faster**. Under concurrency (`ab -n 100 -c 20`), throughput is **3-16x higher** than Apache + C driver.
+
+See [docs/case-study-dual-runtime.md](docs/case-study-dual-runtime.md) for the full analysis.
+
 ## Features
 
 - **Full API parity** with the official PHP MongoDB library — Collection (25 methods), Database (15 methods), Client (12 methods)
