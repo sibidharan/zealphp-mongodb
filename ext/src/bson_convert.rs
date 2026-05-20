@@ -5,6 +5,7 @@ use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ZendHashTable, Zval};
 use ext_php_rs::zend::ClassEntry;
 use ext_php_rs::convert::IntoZval;
+use std::cell::Cell;
 
 fn base64_decode(input: &str) -> Vec<u8> {
     use base64::Engine;
@@ -16,22 +17,81 @@ fn base64_encode(input: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(input)
 }
 
+// Cache class entry pointers — they're stable for the lifetime of the PHP process.
+// Cell is fine here because PHP extensions are single-threaded per-worker.
+thread_local! {
+    static CE_DOCUMENT: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_OBJECTID: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_UTCDATETIME: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_REGEX: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_BSONARRAY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    // Tracks whether we've attempted lookup (so we don't retry on failure)
+    static CE_DOCUMENT_TRIED: Cell<bool> = Cell::new(false);
+    static CE_OBJECTID_TRIED: Cell<bool> = Cell::new(false);
+    static CE_UTCDATETIME_TRIED: Cell<bool> = Cell::new(false);
+    static CE_REGEX_TRIED: Cell<bool> = Cell::new(false);
+    static CE_BSONARRAY_TRIED: Cell<bool> = Cell::new(false);
+}
+
+fn get_ce_cached(
+    cache: &'static std::thread::LocalKey<Cell<Option<&'static ClassEntry>>>,
+    tried: &'static std::thread::LocalKey<Cell<bool>>,
+    name: &str,
+) -> Option<&'static ClassEntry> {
+    cache.with(|c| {
+        if let Some(ce) = c.get() {
+            return Some(ce);
+        }
+        if tried.with(|t| t.get()) {
+            return None;
+        }
+        tried.with(|t| t.set(true));
+        if let Some(ce) = ClassEntry::try_find(name) {
+            let ce_ref: &'static ClassEntry = unsafe { &*(ce as *const ClassEntry) };
+            c.set(Some(ce_ref));
+            Some(ce_ref)
+        } else {
+            None
+        }
+    })
+}
+
+fn get_ce_document() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_DOCUMENT, &CE_DOCUMENT_TRIED, "ZealPHP\\MongoDB\\Document")
+}
+
+fn get_ce_objectid() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_OBJECTID, &CE_OBJECTID_TRIED, "MongoDB\\BSON\\ObjectId")
+}
+
+fn get_ce_utcdatetime() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_UTCDATETIME, &CE_UTCDATETIME_TRIED, "MongoDB\\BSON\\UTCDateTime")
+}
+
+fn get_ce_regex() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_REGEX, &CE_REGEX_TRIED, "MongoDB\\BSON\\Regex")
+}
+
+fn get_ce_bsonarray() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_BSONARRAY, &CE_BSONARRAY_TRIED, "MongoDB\\Model\\BSONArray")
+}
+
 fn make_object_id(hex: &str) -> Option<Zval> {
-    let ce = ClassEntry::try_find("MongoDB\\BSON\\ObjectId")?;
+    let ce = get_ce_objectid()?;
     let obj = ce.new();
     obj.try_call_method("__construct", vec![&hex as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
     obj.into_zval(false).ok()
 }
 
 fn make_utc_date_time(ms: i64) -> Option<Zval> {
-    let ce = ClassEntry::try_find("MongoDB\\BSON\\UTCDateTime")?;
+    let ce = get_ce_utcdatetime()?;
     let obj = ce.new();
     obj.try_call_method("__construct", vec![&ms as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
     obj.into_zval(false).ok()
 }
 
 fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
-    let ce = ClassEntry::try_find("MongoDB\\BSON\\Regex")?;
+    let ce = get_ce_regex()?;
     let obj = ce.new();
     obj.try_call_method("__construct", vec![
         &pattern as &dyn ext_php_rs::convert::IntoZvalDyn,
@@ -41,7 +101,7 @@ fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
 }
 
 fn wrap_as_document(ht: ZBox<ZendHashTable>) -> Zval {
-    if let Some(ce) = ClassEntry::try_find("ZealPHP\\MongoDB\\Document") {
+    if let Some(ce) = get_ce_document() {
         let obj = ce.new();
         let mut arr_zval = Zval::new();
         arr_zval.set_hashtable(ht);
@@ -58,7 +118,7 @@ fn wrap_as_document(ht: ZBox<ZendHashTable>) -> Zval {
 }
 
 fn wrap_as_bson_array(ht: ZBox<ZendHashTable>) -> Zval {
-    if let Some(ce) = ClassEntry::try_find("MongoDB\\Model\\BSONArray") {
+    if let Some(ce) = get_ce_bsonarray() {
         let obj = ce.new();
         let mut arr_zval = Zval::new();
         arr_zval.set_hashtable(ht);
@@ -195,7 +255,7 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
         return Ok(Bson::String(s.to_string()));
     }
     if let Some(obj) = zval.object() {
-        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\ObjectId") {
+        if let Some(ce) = get_ce_objectid() {
             if obj.instance_of(ce) {
                 if let Ok(result) = obj.try_call_method("__toString", vec![]) {
                     if let Some(hex) = result.str() {
@@ -205,7 +265,7 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
                 }
             }
         }
-        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\UTCDateTime") {
+        if let Some(ce) = get_ce_utcdatetime() {
             if obj.instance_of(ce) {
                 if let Ok(result) = obj.try_call_method("__toString", vec![]) {
                     if let Some(ms_str) = result.str() {
@@ -215,7 +275,7 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
                 }
             }
         }
-        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\Regex") {
+        if let Some(ce) = get_ce_regex() {
             if obj.instance_of(ce) {
                 let pattern = obj.try_call_method("getPattern", vec![]).ok().and_then(|v| v.str().map(|s| s.to_string())).unwrap_or_default();
                 let flags = obj.try_call_method("getFlags", vec![]).ok().and_then(|v| v.str().map(|s| s.to_string())).unwrap_or_default();
@@ -379,7 +439,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
 }
 
 pub fn raw_doc_to_php(raw: &RawDocumentBuf) -> Zval {
-    let mut ht = ZendHashTable::new();
+    let mut ht = ZendHashTable::with_capacity(8);
     for result in raw.iter() {
         if let Ok((key, val)) = result {
             let _ = ht.insert(key, raw_bson_to_zval(val));
@@ -389,7 +449,7 @@ pub fn raw_doc_to_php(raw: &RawDocumentBuf) -> Zval {
 }
 
 fn raw_subdoc_to_php(raw: &bson::raw::RawDocument) -> Zval {
-    let mut ht = ZendHashTable::new();
+    let mut ht = ZendHashTable::with_capacity(8);
     for result in raw.iter() {
         if let Ok((key, val)) = result {
             let _ = ht.insert(key, raw_bson_to_zval(val));

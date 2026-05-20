@@ -11,6 +11,7 @@ use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
 use function zealphp_mongodb_cursor_to_array;
 use function zealphp_mongodb_find;
+use function zealphp_mongodb_find_all;
 
 class Cursor implements Iterator
 {
@@ -81,6 +82,16 @@ class Cursor implements Iterator
     /** @return list<Document|array<string, mixed>> */
     public function toArray(): array
     {
+        if ($this->canUseFindAll()) {
+            $q = $this->deferredQuery;
+            $this->deferredQuery = null;
+            $this->current = null;
+            $this->started = true;
+            $this->cursorId = null;
+
+            return zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts'] ?? []) ?: [];
+        }
+
         $this->ensureCursor();
 
         $results = [];
@@ -111,6 +122,14 @@ class Cursor implements Iterator
         $this->cursorId = null;
 
         return $results;
+    }
+
+    private function canUseFindAll(): bool
+    {
+        return !$this->started
+            && $this->deferredQuery !== null
+            && $this->cursorId === null
+            && function_exists('zealphp_mongodb_find_all');
     }
 
     public function __destruct()

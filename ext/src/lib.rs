@@ -476,7 +476,7 @@ pub fn zealphp_mongodb_find_all(
     }).map_err(|e| PhpException::default(e))?;
 
     let mut zval = Zval::new();
-    let mut ht = ZendHashTable::new();
+    let mut ht = ZendHashTable::with_capacity(docs.len() as u32);
     for (i, doc) in docs.iter().enumerate() {
         let _ = ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
     }
@@ -488,7 +488,7 @@ pub fn zealphp_mongodb_find_all(
 pub fn zealphp_mongodb_cursor_to_array(cursor_id: i64) -> PhpResult<Zval> {
     let docs = cursor::drain_to_vec(cursor_id as u64).map_err(|e| PhpException::default(e))?;
     let mut zval = Zval::new();
-    let mut ht = ZendHashTable::new();
+    let mut ht = ZendHashTable::with_capacity(docs.len() as u32);
     for (i, doc) in docs.iter().enumerate() {
         let _ = ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
     }
