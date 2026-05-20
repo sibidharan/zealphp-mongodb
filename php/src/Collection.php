@@ -38,7 +38,6 @@ use function zealphp_mongodb_drop_collection;
 use function zealphp_mongodb_drop_index;
 use function zealphp_mongodb_drop_indexes;
 use function zealphp_mongodb_estimated_document_count;
-use function zealphp_mongodb_find;
 use function zealphp_mongodb_find_one;
 use function zealphp_mongodb_find_one_and_delete;
 use function zealphp_mongodb_find_one_and_replace;

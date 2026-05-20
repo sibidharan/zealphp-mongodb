@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB;
 
 use Iterator;
 
+use function is_array;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
 use function zealphp_mongodb_cursor_to_array;
@@ -15,21 +16,21 @@ use function zealphp_mongodb_find_all;
 class Cursor implements Iterator
 {
     private Document|array|null $current = null;
-    private int $key = -1;
-    private bool $started = false;
-    private ?int $cursorId;
-    private ?array $deferredQuery;
+    private int $key                     = -1;
+    private bool $started                = false;
+    /** @var array{poolId: int, db: string, col: string, filter: array<string, mixed>, opts: array<string, mixed>|null}|null */
+    private array|null $deferredQuery;
 
-    public function __construct(int $cursorId)
+    public function __construct(private int|null $cursorId)
     {
-        $this->cursorId = $cursorId;
         $this->deferredQuery = null;
     }
 
-    public static function deferred(int $poolId, string $db, string $col, array $filter, ?array $opts): self
+    /** @param array<string, mixed> $filter */
+    public static function deferred(int $poolId, string $db, string $col, array $filter, array|null $opts): self
     {
-        $c = new self(0);
-        $c->cursorId = null;
+        $c                = new self(0);
+        $c->cursorId      = null;
         $c->deferredQuery = ['poolId' => $poolId, 'db' => $db, 'col' => $col, 'filter' => $filter, 'opts' => $opts];
 
         return $c;
@@ -37,10 +38,12 @@ class Cursor implements Iterator
 
     private function ensureCursor(): void
     {
-        if ($this->cursorId === null && $this->deferredQuery !== null) {
-            $q = $this->deferredQuery;
-            $this->cursorId = zealphp_mongodb_find($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
+        if ($this->cursorId !== null || $this->deferredQuery === null) {
+            return;
         }
+
+        $q              = $this->deferredQuery;
+        $this->cursorId = zealphp_mongodb_find($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
     }
 
     public function current(): Document|array|null
@@ -71,19 +74,19 @@ class Cursor implements Iterator
     public function next(): void
     {
         $this->ensureCursor();
-        $raw = zealphp_mongodb_cursor_next($this->cursorId);
-        $this->current = $raw !== null ? $raw : null;
+        $this->current = zealphp_mongodb_cursor_next($this->cursorId) ?? null;
         $this->key++;
     }
 
+    /** @return list<Document|array<string, mixed>> */
     public function toArray(): array
     {
         if (! $this->started && $this->deferredQuery !== null) {
-            $q = $this->deferredQuery;
+            $q                   = $this->deferredQuery;
             $this->deferredQuery = null;
-            $results = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
-            $this->current = null;
-            $this->started = true;
+            $results             = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
+            $this->current       = null;
+            $this->started       = true;
 
             return is_array($results) ? $results : [];
         }
@@ -109,8 +112,10 @@ class Cursor implements Iterator
 
     public function __destruct()
     {
-        if ($this->cursorId !== null) {
-            @zealphp_mongodb_cursor_close($this->cursorId);
+        if ($this->cursorId === null) {
+            return;
         }
+
+        @zealphp_mongodb_cursor_close($this->cursorId);
     }
 }
