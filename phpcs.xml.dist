@@ -12,6 +12,8 @@
     <file>php/src</file>
     <file>tests</file>
 
+    <exclude-pattern>php/src/compat/</exclude-pattern>
+
     <rule ref="Doctrine">
         <!-- Disable overly strict rules for initial adoption -->
         <exclude name="SlevomatCodingStandard.TypeHints.ReturnTypeHint.MissingNativeTypeHint"/>
