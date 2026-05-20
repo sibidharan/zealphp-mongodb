@@ -69,7 +69,7 @@ class Collection
 
         $result = zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
-        return is_array($result) ? new Document($result) : $result;
+        return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor
@@ -164,7 +164,7 @@ class Collection
 
         $result = zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
 
-        return is_array($result) ? new Document($result) : $result;
+        return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
     public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
@@ -174,7 +174,7 @@ class Collection
 
         $result = zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
-        return is_array($result) ? new Document($result) : $result;
+        return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
     public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): Document|array|null
@@ -185,7 +185,7 @@ class Collection
 
         $result = zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
 
-        return is_array($result) ? new Document($result) : $result;
+        return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
     public function createIndex(array|object $key, array $options = []): string

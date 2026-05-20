@@ -9,9 +9,7 @@ use Iterator;
 use function is_array;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
-use function zealphp_mongodb_cursor_to_array;
 use function zealphp_mongodb_find;
-use function zealphp_mongodb_find_all;
 
 class Cursor implements Iterator
 {
@@ -75,38 +73,27 @@ class Cursor implements Iterator
     {
         $this->ensureCursor();
         $raw = zealphp_mongodb_cursor_next($this->cursorId) ?? null;
-        $this->current = is_array($raw) ? new Document($raw) : $raw;
+        $this->current = is_array($raw) ? Collection::wrapDoc($raw) : $raw;
         $this->key++;
     }
 
     /** @return list<Document|array<string, mixed>> */
     public function toArray(): array
     {
-        if (! $this->started && $this->deferredQuery !== null) {
-            $q                   = $this->deferredQuery;
-            $this->deferredQuery = null;
-            $results             = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
-            $this->current       = null;
-            $this->started       = true;
-
-            if (! is_array($results)) {
-                return [];
-            }
-
-            return array_map(static fn ($doc) => is_array($doc) ? new Document($doc) : $doc, $results);
-        }
-
         $this->ensureCursor();
+
         $results = [];
         if ($this->started && $this->current !== null) {
             $results[] = $this->current;
         }
 
-        $raw = zealphp_mongodb_cursor_to_array($this->cursorId);
-        if (is_array($raw)) {
-            foreach ($raw as $doc) {
-                $results[] = is_array($doc) ? new Document($doc) : $doc;
+        while (true) {
+            $raw = zealphp_mongodb_cursor_next($this->cursorId);
+            if ($raw === null || $raw === false) {
+                break;
             }
+
+            $results[] = is_array($raw) ? Collection::wrapDoc($raw) : $raw;
         }
 
         $this->current = null;
