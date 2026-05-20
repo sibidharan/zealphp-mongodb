@@ -1,41 +1,47 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Polyfill stubs for MongoDB\BSON\* interfaces and classes normally provided by ext-mongodb (C driver).
- * These allow the mongodb/mongodb PHP library to load without the C extension when using the
- * ZealPHP Rust-based MongoDB extension instead.
+ * These allow the mongodb/mongodb PHP library to load when only the Rust zealphp_mongodb.so extension is present.
  */
 
-if (! interface_exists('MongoDB\BSON\Type', false)) {
-    // @phpcs:disable PSR1.Classes.ClassDeclaration.MultipleClasses
-    namespace MongoDB\BSON {
+namespace MongoDB\BSON {
+    if (! interface_exists('MongoDB\BSON\Type', false)) {
         interface Type
         {
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\Serializable', false)) {
         interface Serializable extends Type
         {
             public function bsonSerialize(): array|\stdClass;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\Unserializable', false)) {
         interface Unserializable
         {
             public function bsonUnserialize(array $data): void;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\Persistable', false)) {
         interface Persistable extends Serializable, Unserializable
         {
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\ObjectIdInterface', false)) {
         interface ObjectIdInterface
         {
             public function getTimestamp(): int;
 
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\RegexInterface', false)) {
         interface RegexInterface
         {
             public function getPattern(): string;
@@ -44,7 +50,9 @@ if (! interface_exists('MongoDB\BSON\Type', false)) {
 
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\TimestampInterface', false)) {
         interface TimestampInterface
         {
             public function getTimestamp(): int;
@@ -53,14 +61,18 @@ if (! interface_exists('MongoDB\BSON\Type', false)) {
 
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\UTCDateTimeInterface', false)) {
         interface UTCDateTimeInterface
         {
             public function toDateTime(): \DateTimeInterface;
 
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\BinaryInterface', false)) {
         interface BinaryInterface
         {
             public function getData(): string;
@@ -69,12 +81,16 @@ if (! interface_exists('MongoDB\BSON\Type', false)) {
 
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\Decimal128Interface', false)) {
         interface Decimal128Interface
         {
             public function __toString(): string;
         }
+    }
 
+    if (! interface_exists('MongoDB\BSON\JavascriptInterface', false)) {
         interface JavascriptInterface
         {
             public function getCode(): string;
@@ -84,9 +100,7 @@ if (! interface_exists('MongoDB\BSON\Type', false)) {
             public function __toString(): string;
         }
     }
-}
 
-namespace MongoDB\BSON {
     if (! class_exists('MongoDB\BSON\ObjectId', false)) {
         class ObjectId implements ObjectIdInterface, \JsonSerializable, Type, Serializable
         {
