@@ -1,7 +1,10 @@
 use bson::{Bson, Document};
 use bson::raw::{RawBsonRef, RawDocumentBuf};
 use bson::spec::ElementType;
+use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ZendHashTable, Zval};
+use ext_php_rs::zend::ClassEntry;
+use ext_php_rs::convert::IntoZval;
 
 fn base64_decode(input: &str) -> Vec<u8> {
     use base64::Engine;
@@ -11,6 +14,64 @@ fn base64_decode(input: &str) -> Vec<u8> {
 fn base64_encode(input: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(input)
+}
+
+fn make_object_id(hex: &str) -> Option<Zval> {
+    let ce = ClassEntry::try_find("MongoDB\\BSON\\ObjectId")?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![&hex as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_utc_date_time(ms: i64) -> Option<Zval> {
+    let ce = ClassEntry::try_find("MongoDB\\BSON\\UTCDateTime")?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![&ms as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
+    let ce = ClassEntry::try_find("MongoDB\\BSON\\Regex")?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![
+        &pattern as &dyn ext_php_rs::convert::IntoZvalDyn,
+        &options as &dyn ext_php_rs::convert::IntoZvalDyn,
+    ]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn wrap_as_document(ht: ZBox<ZendHashTable>) -> Zval {
+    if let Some(ce) = ClassEntry::try_find("ZealPHP\\MongoDB\\Document") {
+        let obj = ce.new();
+        let mut arr_zval = Zval::new();
+        arr_zval.set_hashtable(ht);
+        if obj.try_call_method("__construct", vec![&arr_zval as &dyn ext_php_rs::convert::IntoZvalDyn]).is_ok() {
+            if let Ok(z) = obj.into_zval(false) {
+                return z;
+            }
+        }
+        return arr_zval;
+    }
+    let mut zval = Zval::new();
+    zval.set_hashtable(ht);
+    zval
+}
+
+fn wrap_as_bson_array(ht: ZBox<ZendHashTable>) -> Zval {
+    if let Some(ce) = ClassEntry::try_find("MongoDB\\Model\\BSONArray") {
+        let obj = ce.new();
+        let mut arr_zval = Zval::new();
+        arr_zval.set_hashtable(ht);
+        if obj.try_call_method("__construct", vec![&arr_zval as &dyn ext_php_rs::convert::IntoZvalDyn]).is_ok() {
+            if let Ok(z) = obj.into_zval(false) {
+                return z;
+            }
+        }
+        return arr_zval;
+    }
+    let mut zval = Zval::new();
+    zval.set_hashtable(ht);
+    zval
 }
 
 pub fn php_to_doc(zval: &Zval) -> Result<Document, String> {
@@ -63,7 +124,6 @@ fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
         }
     }
 
-    // Binary: {"$binary": {"base64": "AAEC", "subType": "00"}}
     if let Some(bin_val) = ht.get("$binary") {
         if let Some(inner) = bin_val.array() {
             let b64 = inner.get("base64").and_then(|v| v.str()).unwrap_or("");
@@ -77,7 +137,6 @@ fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
         }
     }
 
-    // Decimal128: {"$numberDecimal": "3.14"}
     if let Some(dec_val) = ht.get("$numberDecimal") {
         if let Some(s) = dec_val.str() {
             let d128 = s.parse::<bson::Decimal128>().unwrap_or_else(|_| "0".parse::<bson::Decimal128>().unwrap());
@@ -85,7 +144,6 @@ fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
         }
     }
 
-    // Timestamp: {"$timestamp": {"t": 123, "i": 1}}
     if let Some(ts_val) = ht.get("$timestamp") {
         if let Some(inner) = ts_val.array() {
             let t = inner.get("t").and_then(|v| v.long()).unwrap_or(0) as u32;
@@ -94,18 +152,14 @@ fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
         }
     }
 
-    // MinKey: {"$minKey": 1}
     if ht.get("$minKey").is_some() {
         return Ok(Some(Bson::MinKey));
     }
 
-    // MaxKey: {"$maxKey": 1}
     if ht.get("$maxKey").is_some() {
         return Ok(Some(Bson::MaxKey));
     }
 
-    // Javascript with scope: {"$code": "...", "$scope": {...}}
-    // Javascript without scope: {"$code": "..."}
     if let Some(code_val) = ht.get("$code") {
         if let Some(code_str) = code_val.str() {
             if let Some(scope_val) = ht.get("$scope") {
@@ -140,6 +194,35 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
     if let Some(s) = zval.str() {
         return Ok(Bson::String(s.to_string()));
     }
+    if let Some(obj) = zval.object() {
+        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\ObjectId") {
+            if obj.instance_of(ce) {
+                if let Ok(result) = obj.try_call_method("__toString", vec![]) {
+                    if let Some(hex) = result.str() {
+                        let oid = bson::oid::ObjectId::parse_str(hex).map_err(|e| e.to_string())?;
+                        return Ok(Bson::ObjectId(oid));
+                    }
+                }
+            }
+        }
+        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\UTCDateTime") {
+            if obj.instance_of(ce) {
+                if let Ok(result) = obj.try_call_method("__toString", vec![]) {
+                    if let Some(ms_str) = result.str() {
+                        let ms: i64 = ms_str.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                        return Ok(Bson::DateTime(bson::DateTime::from_millis(ms)));
+                    }
+                }
+            }
+        }
+        if let Some(ce) = ClassEntry::try_find("MongoDB\\BSON\\Regex") {
+            if obj.instance_of(ce) {
+                let pattern = obj.try_call_method("getPattern", vec![]).ok().and_then(|v| v.str().map(|s| s.to_string())).unwrap_or_default();
+                let flags = obj.try_call_method("getFlags", vec![]).ok().and_then(|v| v.str().map(|s| s.to_string())).unwrap_or_default();
+                return Ok(Bson::RegularExpression(bson::Regex { pattern, options: flags }));
+            }
+        }
+    }
     if let Some(arr) = zval.array() {
         if let Some(bson_type) = try_extended_json(arr)? {
             return Ok(bson_type);
@@ -162,38 +245,25 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
 }
 
 pub fn doc_to_php(doc: &Document) -> Zval {
-    let mut zval = Zval::new();
     let mut ht = ZendHashTable::new();
     for (key, val) in doc.iter() {
         let php_val = bson_to_zval(val);
         let _ = ht.insert(key, php_val);
     }
-    zval.set_hashtable(ht);
-    zval
+    wrap_as_document(ht)
 }
 
 pub fn bson_to_zval(bson: &Bson) -> Zval {
     let mut zval = Zval::new();
     match bson {
-        Bson::Null => {
-            zval.set_null();
-        }
-        Bson::Boolean(b) => {
-            zval.set_bool(*b);
-        }
-        Bson::Int32(i) => {
-            zval.set_long(*i as i64);
-        }
-        Bson::Int64(i) => {
-            zval.set_long(*i);
-        }
-        Bson::Double(f) => {
-            zval.set_double(*f);
-        }
-        Bson::String(s) => {
-            let _ = zval.set_string(s, false);
-        }
+        Bson::Null => { zval.set_null(); }
+        Bson::Boolean(b) => { zval.set_bool(*b); }
+        Bson::Int32(i) => { zval.set_long(*i as i64); }
+        Bson::Int64(i) => { zval.set_long(*i); }
+        Bson::Double(f) => { zval.set_double(*f); }
+        Bson::String(s) => { let _ = zval.set_string(s, false); }
         Bson::ObjectId(oid) => {
+            if let Some(z) = make_object_id(&oid.to_hex()) { return z; }
             let mut ht = ZendHashTable::new();
             let mut oid_zval = Zval::new();
             let _ = oid_zval.set_string(&oid.to_hex(), false);
@@ -201,6 +271,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::DateTime(dt) => {
+            if let Some(z) = make_utc_date_time(dt.timestamp_millis()) { return z; }
             let mut outer = ZendHashTable::new();
             let mut inner = ZendHashTable::new();
             let ms_str = dt.timestamp_millis().to_string();
@@ -212,18 +283,15 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             let _ = outer.insert("$date", inner_zval);
             zval.set_hashtable(outer);
         }
-        Bson::Document(doc) => {
-            return doc_to_php(doc);
-        }
+        Bson::Document(doc) => { return doc_to_php(doc); }
         Bson::Array(arr) => {
             let mut ht = ZendHashTable::new();
             for (i, val) in arr.iter().enumerate() {
                 let _ = ht.insert_at_index(i as u64, bson_to_zval(val));
             }
-            zval.set_hashtable(ht);
+            return wrap_as_bson_array(ht);
         }
         Bson::Binary(bin) => {
-            // Return extended JSON: {"$binary": {"base64": ..., "subType": ...}}
             let mut outer = ZendHashTable::new();
             let mut inner = ZendHashTable::new();
             let b64 = base64_encode(&bin.bytes);
@@ -240,6 +308,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(outer);
         }
         Bson::RegularExpression(re) => {
+            if let Some(z) = make_regex(&re.pattern, &re.options) { return z; }
             let mut outer = ZendHashTable::new();
             let mut inner = ZendHashTable::new();
             let mut p_zval = Zval::new();
@@ -282,7 +351,6 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::JavaScriptCodeWithScope(jsc) => {
-            // Return extended JSON: {"$code": ..., "$scope": {...}}
             let mut ht = ZendHashTable::new();
             let mut code_zval = Zval::new();
             let _ = code_zval.set_string(&jsc.code, false);
@@ -292,7 +360,6 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::MinKey => {
-            // Return extended JSON: {"$minKey": 1}
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);
@@ -300,42 +367,35 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::MaxKey => {
-            // Return extended JSON: {"$maxKey": 1}
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);
             let _ = ht.insert("$maxKey", one);
             zval.set_hashtable(ht);
         }
-        _ => {
-            zval.set_null();
-        }
+        _ => { zval.set_null(); }
     }
     zval
 }
 
 pub fn raw_doc_to_php(raw: &RawDocumentBuf) -> Zval {
-    let mut zval = Zval::new();
     let mut ht = ZendHashTable::new();
     for result in raw.iter() {
         if let Ok((key, val)) = result {
             let _ = ht.insert(key, raw_bson_to_zval(val));
         }
     }
-    zval.set_hashtable(ht);
-    zval
+    wrap_as_document(ht)
 }
 
 fn raw_subdoc_to_php(raw: &bson::raw::RawDocument) -> Zval {
-    let mut zval = Zval::new();
     let mut ht = ZendHashTable::new();
     for result in raw.iter() {
         if let Ok((key, val)) = result {
             let _ = ht.insert(key, raw_bson_to_zval(val));
         }
     }
-    zval.set_hashtable(ht);
-    zval
+    wrap_as_document(ht)
 }
 
 fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
@@ -361,6 +421,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::ObjectId => {
             if let RawBsonRef::ObjectId(oid) = val {
+                if let Some(z) = make_object_id(&oid.to_hex()) { return z; }
                 let mut ht = ZendHashTable::new();
                 let mut oid_zval = Zval::new();
                 let _ = oid_zval.set_string(&oid.to_hex(), false);
@@ -370,6 +431,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::DateTime => {
             if let RawBsonRef::DateTime(dt) = val {
+                if let Some(z) = make_utc_date_time(dt.timestamp_millis()) { return z; }
                 let mut outer = ZendHashTable::new();
                 let mut inner = ZendHashTable::new();
                 let ms_str = dt.timestamp_millis().to_string();
@@ -395,7 +457,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
                         let _ = ht.insert_at_index(i as u64, raw_bson_to_zval(v));
                     }
                 }
-                zval.set_hashtable(ht);
+                return wrap_as_bson_array(ht);
             }
         }
         ElementType::Binary => {
@@ -418,6 +480,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::RegularExpression => {
             if let RawBsonRef::RegularExpression(re) = val {
+                if let Some(z) = make_regex(re.pattern, re.options) { return z; }
                 let mut outer = ZendHashTable::new();
                 let mut inner = ZendHashTable::new();
                 let mut p_zval = Zval::new();

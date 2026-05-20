@@ -68,16 +68,15 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = $options ?: null;
 
-        return self::wrapDoc(zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
+        return zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor
     {
         $filter = self::prepareBSON((array) $filter);
         $opts = $options ?: null;
-        $cursorId = zealphp_mongodb_find($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
-        return new Cursor($cursorId);
+        return Cursor::deferred($this->poolId, $this->dbName, $this->colName, $filter, $opts);
     }
 
     public function insertOne(array|object $document, array $options = []): InsertOneResult
@@ -162,7 +161,7 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = $options ?: null;
 
-        return self::wrapDoc(zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
+        return zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
     }
 
     public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
@@ -170,7 +169,7 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = null;
 
-        return self::wrapDoc(zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts));
+        return zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
     }
 
     public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): Document|array|null
@@ -179,7 +178,7 @@ class Collection
         $replacement = self::prepareBSON((array) $replacement);
         $opts = $options ?: null;
 
-        return self::wrapDoc(zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
+        return zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
     }
 
     public function createIndex(array|object $key, array $options = []): string

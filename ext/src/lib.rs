@@ -457,6 +457,34 @@ pub fn zealphp_mongodb_cursor_close(cursor_id: i64) {
 }
 
 #[php_function]
+pub fn zealphp_mongodb_find_all(
+    pool_id: i64,
+    db: &str,
+    col: &str,
+    filter: &Zval,
+    opts: Option<&Zval>,
+) -> PhpResult<Zval> {
+    let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
+    let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
+    let fo = parse_find_options(opts);
+    let collection = client.database(db).collection::<bson::raw::RawDocumentBuf>(col);
+
+    let docs: Vec<bson::raw::RawDocumentBuf> = coroutine::run_sync(async move {
+        use futures::TryStreamExt;
+        let cursor = collection.find(filter_doc).with_options(fo).await?;
+        cursor.try_collect().await
+    }).map_err(|e| PhpException::default(e))?;
+
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    for (i, doc) in docs.iter().enumerate() {
+        let _ = ht.insert_at_index(i as u64, bson_convert::raw_doc_to_php(doc));
+    }
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
+#[php_function]
 pub fn zealphp_mongodb_cursor_to_array(cursor_id: i64) -> PhpResult<Zval> {
     let docs = cursor::drain_to_vec(cursor_id as u64).map_err(|e| PhpException::default(e))?;
     let mut zval = Zval::new();

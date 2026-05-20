@@ -4,53 +4,59 @@
  * Used by Psalm for static analysis — these functions are provided by the native extension at runtime.
  */
 
-function zealphp_mongodb_connect(string $uri): int {}
-function zealphp_mongodb_close(int $poolId): void {}
-function zealphp_mongodb_list_databases(int $poolId): array {}
-function zealphp_mongodb_drop_database(int $poolId, string $dbName): void {}
-function zealphp_mongodb_run_command(int $poolId, string $dbName, array $command): array {}
+namespace {
+    function zealphp_mongodb_connect(string $uri): int {}
+    function zealphp_mongodb_close(int $poolId): void {}
+    function zealphp_mongodb_list_databases(int $poolId): array {}
+    function zealphp_mongodb_drop_database(int $poolId, string $dbName): void {}
+    function zealphp_mongodb_run_command(int $poolId, string $dbName, array $command): array {}
 
-function zealphp_mongodb_create_collection(int $poolId, string $dbName, string $colName): void {}
-function zealphp_mongodb_drop_collection(int $poolId, string $dbName, string $colName): void {}
-function zealphp_mongodb_list_collection_names(int $poolId, string $dbName): array {}
+    function zealphp_mongodb_create_collection(int $poolId, string $dbName, string $colName): void {}
+    function zealphp_mongodb_drop_collection(int $poolId, string $dbName, string $colName): void {}
+    function zealphp_mongodb_list_collection_names(int $poolId, string $dbName): array {}
 
-function zealphp_mongodb_find_one(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): ?array {}
-function zealphp_mongodb_find(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): int {}
-function zealphp_mongodb_insert_one(int $poolId, string $dbName, string $colName, array $document, ?array $opts = null): array {}
-function zealphp_mongodb_insert_many(int $poolId, string $dbName, string $colName, array $documents, ?array $opts = null): array {}
-function zealphp_mongodb_update_one(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): array {}
-function zealphp_mongodb_update_many(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): array {}
-function zealphp_mongodb_delete_one(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
-function zealphp_mongodb_delete_many(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
-function zealphp_mongodb_replace_one(int $poolId, string $dbName, string $colName, array $filter, array $replacement, ?array $opts = null): array {}
-function zealphp_mongodb_count_documents(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): int {}
-function zealphp_mongodb_estimated_document_count(int $poolId, string $dbName, string $colName): int {}
-function zealphp_mongodb_distinct(int $poolId, string $dbName, string $colName, string $fieldName, array $filter, ?array $opts = null): array {}
-function zealphp_mongodb_aggregate(int $poolId, string $dbName, string $colName, array $pipeline, ?array $opts = null): int {}
+    function zealphp_mongodb_find_one(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): ?array {}
+    function zealphp_mongodb_find(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): int {}
+    function zealphp_mongodb_insert_one(int $poolId, string $dbName, string $colName, array $document, ?array $opts = null): array {}
+    function zealphp_mongodb_insert_many(int $poolId, string $dbName, string $colName, array $documents, ?array $opts = null): array {}
+    function zealphp_mongodb_update_one(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): array {}
+    function zealphp_mongodb_update_many(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): array {}
+    function zealphp_mongodb_delete_one(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
+    function zealphp_mongodb_delete_many(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
+    function zealphp_mongodb_replace_one(int $poolId, string $dbName, string $colName, array $filter, array $replacement, ?array $opts = null): array {}
+    function zealphp_mongodb_count_documents(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): int {}
+    function zealphp_mongodb_estimated_document_count(int $poolId, string $dbName, string $colName): int {}
+    function zealphp_mongodb_distinct(int $poolId, string $dbName, string $colName, string $fieldName, array $filter, ?array $opts = null): array {}
+    function zealphp_mongodb_aggregate(int $poolId, string $dbName, string $colName, array $pipeline, ?array $opts = null): int {}
 
-function zealphp_mongodb_find_one_and_update(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): ?array {}
-function zealphp_mongodb_find_one_and_delete(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): ?array {}
-function zealphp_mongodb_find_one_and_replace(int $poolId, string $dbName, string $colName, array $filter, array $replacement, ?array $opts = null): ?array {}
+    function zealphp_mongodb_find_one_and_update(int $poolId, string $dbName, string $colName, array $filter, array $update, ?array $opts = null): ?array {}
+    function zealphp_mongodb_find_one_and_delete(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): ?array {}
+    function zealphp_mongodb_find_one_and_replace(int $poolId, string $dbName, string $colName, array $filter, array $replacement, ?array $opts = null): ?array {}
 
-function zealphp_mongodb_create_index(int $poolId, string $dbName, string $colName, array $keys, ?array $opts = null): string {}
-function zealphp_mongodb_list_indexes(int $poolId, string $dbName, string $colName): array {}
-function zealphp_mongodb_drop_index(int $poolId, string $dbName, string $colName, string $indexName): void {}
-function zealphp_mongodb_drop_indexes(int $poolId, string $dbName, string $colName): void {}
+    function zealphp_mongodb_create_index(int $poolId, string $dbName, string $colName, array $keys, ?array $opts = null): string {}
+    function zealphp_mongodb_list_indexes(int $poolId, string $dbName, string $colName): array {}
+    function zealphp_mongodb_drop_index(int $poolId, string $dbName, string $colName, string $indexName): void {}
+    function zealphp_mongodb_drop_indexes(int $poolId, string $dbName, string $colName): void {}
 
-function zealphp_mongodb_cursor_next(int $cursorId): ?array {}
-function zealphp_mongodb_cursor_close(int $cursorId): void {}
-function zealphp_mongodb_cursor_to_array(int $cursorId): array {}
-function zealphp_mongodb_cursor_next_batch_async(int $cursorId, int $batchSize): array {}
+    function zealphp_mongodb_find_all(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
 
-function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline = null): array {}
-function zealphp_mongodb_async_result(int $taskId): mixed {}
-function zealphp_mongodb_batch_result(int $taskId): array {}
-function zealphp_mongodb_close_efd(int $efd): void {}
+    function zealphp_mongodb_cursor_next(int $cursorId): ?array {}
+    function zealphp_mongodb_cursor_close(int $cursorId): void {}
+    function zealphp_mongodb_cursor_to_array(int $cursorId): array {}
+    function zealphp_mongodb_cursor_next_batch_async(int $cursorId, int $batchSize): array {}
+
+    function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline = null): array {}
+    function zealphp_mongodb_async_result(int $taskId): mixed {}
+    function zealphp_mongodb_batch_result(int $taskId): array {}
+    function zealphp_mongodb_close_efd(int $efd): void {}
+
+    define('OPENSWOOLE_EVENT_READ', 512);
+}
 
 namespace MongoDB\BSON {
-    class ObjectId { public function __construct(string $id = '') {} public function __toString(): string { return ''; } }
-    class UTCDateTime { public function __construct(int $milliseconds = 0) {} public function toDateTime(): \DateTime { return new \DateTime(); } }
-    class Regex { public function __construct(string $pattern, string $flags = '') {} }
+    class ObjectId { public function __construct(string $id = '') {} public function __toString(): string { return ''; } public function getTimestamp(): int { return 0; } }
+    class UTCDateTime { public function __construct(int $milliseconds = 0) {} public function __toString(): string { return ''; } public function toDateTime(): \DateTime { return new \DateTime(); } }
+    class Regex { public function __construct(string $pattern, string $flags = '') {} public function getPattern(): string { return ''; } public function getFlags(): string { return ''; } }
 }
 
 namespace MongoDB\Model {
@@ -60,8 +66,6 @@ namespace MongoDB\Model {
     /** @template-extends \ArrayObject<int, mixed> */
     class BSONArray extends \ArrayObject {}
 }
-
-define('OPENSWOOLE_EVENT_READ', 512);
 
 namespace OpenSwoole {
     class Coroutine {
