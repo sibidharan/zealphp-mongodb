@@ -9,6 +9,7 @@ use Iterator;
 use function is_array;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
+use function zealphp_mongodb_cursor_to_array;
 use function zealphp_mongodb_find;
 
 class Cursor implements Iterator
@@ -87,17 +88,27 @@ class Cursor implements Iterator
             $results[] = $this->current;
         }
 
-        while (true) {
-            $raw = zealphp_mongodb_cursor_next($this->cursorId);
-            if ($raw === null || $raw === false) {
-                break;
+        if (function_exists('zealphp_mongodb_cursor_to_array')) {
+            $bulk = zealphp_mongodb_cursor_to_array($this->cursorId);
+            if (is_array($bulk)) {
+                foreach ($bulk as $raw) {
+                    $results[] = is_array($raw) ? Collection::wrapDoc($raw) : $raw;
+                }
             }
+        } else {
+            while (true) {
+                $raw = zealphp_mongodb_cursor_next($this->cursorId);
+                if ($raw === null || $raw === false) {
+                    break;
+                }
 
-            $results[] = is_array($raw) ? Collection::wrapDoc($raw) : $raw;
+                $results[] = is_array($raw) ? Collection::wrapDoc($raw) : $raw;
+            }
         }
 
         $this->current = null;
         $this->started = true;
+        $this->cursorId = null;
 
         return $results;
     }
