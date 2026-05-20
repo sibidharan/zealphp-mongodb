@@ -20,6 +20,9 @@
         }
     ],
     "autoload": {
+        "files": [
+            "php/src/compat/bson_polyfill.php"
+        ],
         "psr-4": {
             "ZealPHP\\MongoDB\\": "php/src/"
         }
