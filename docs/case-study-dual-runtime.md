@@ -44,7 +44,9 @@ MongoDB clients hold connection pools tied to the runtime they're created on. Th
 
 ### RawDocumentBuf Zero-Copy Path
 
-BSON conversion uses `RawDocumentBuf` instead of the intermediate `bson::Document` tree. `RawBsonRef` provides zero-copy views into the BSON byte buffer — strings are borrowed slices, not owned allocations. This eliminates one full deserialization pass per document.
+The entire BSON-to-PHP conversion happens in Rust. The `raw_doc_to_php` function reads directly from `RawDocumentBuf` byte buffers — `RawBsonRef` provides zero-copy views where strings are borrowed slices, not owned allocations. This eliminated the original double-deserialization problem (Wire → `bson::Document` → PHP zval) by going Wire → `RawDocumentBuf` → PHP zval in a single pass.
+
+The remaining overhead is in `ext-php-rs`'s Zval/ZendHashTable creation wrappers, which add abstraction layers over PHP's internal C API. The C driver calls `zend_hash_update`, `ZVAL_STRING`, etc. directly; our path goes through ext-php-rs's safe Rust wrappers (`ZendHashTable::insert`, `Zval::set_string`), which add bounds checking and reference counting overhead per field.
 
 ## Per-Operation Benchmarks
 
@@ -213,7 +215,7 @@ Apache (ext-mongodb C driver)            ZealPHP (zealphp-mongodb Rust driver)
 
 3. **Dual runtimes for dual execution models.** The `current_thread` sync runtime eliminates coordination overhead for blocking calls. The `multi_thread` async runtime enables fire-and-forget spawning for coroutine integration.
 
-4. **Zero-copy BSON reduces but doesn't eliminate the FFI gap.** `RawDocumentBuf` avoids one full deserialization pass, but the Rust→PHP value conversion still crosses the FFI boundary per field. Bulk cursor reads (1000 docs) remain the weakest point.
+4. **BSON conversion is fully in Rust, but ext-php-rs wrappers add overhead.** `RawDocumentBuf` eliminated double deserialization — the entire BSON→PHP conversion now happens in one pass in Rust. The remaining gap on bulk cursor reads is `ext-php-rs`'s safe Zval/ZendHashTable wrappers vs the C driver's direct `zend_hash_update`/`ZVAL_STRING` calls. Closing this gap means either optimizing ext-php-rs or using unsafe direct PHP API calls for hot paths.
 
 5. **Lazy resource creation matters.** The async MongoDB client is created only on first coroutine use. CLI scripts and workers never pay the cost.
 
