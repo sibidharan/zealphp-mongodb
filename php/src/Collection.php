@@ -67,7 +67,9 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = $options ?: null;
 
-        return zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        $result = zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+
+        return is_array($result) ? new Document($result) : $result;
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor
@@ -160,7 +162,9 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = $options ?: null;
 
-        return zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
+        $result = zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
+
+        return is_array($result) ? new Document($result) : $result;
     }
 
     public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
@@ -168,7 +172,9 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = null;
 
-        return zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        $result = zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+
+        return is_array($result) ? new Document($result) : $result;
     }
 
     public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): Document|array|null
@@ -177,7 +183,9 @@ class Collection
         $replacement = self::prepareBSON((array) $replacement);
         $opts = $options ?: null;
 
-        return zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
+        $result = zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
+
+        return is_array($result) ? new Document($result) : $result;
     }
 
     public function createIndex(array|object $key, array $options = []): string

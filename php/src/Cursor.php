@@ -74,7 +74,8 @@ class Cursor implements Iterator
     public function next(): void
     {
         $this->ensureCursor();
-        $this->current = zealphp_mongodb_cursor_next($this->cursorId) ?? null;
+        $raw = zealphp_mongodb_cursor_next($this->cursorId) ?? null;
+        $this->current = is_array($raw) ? new Document($raw) : $raw;
         $this->key++;
     }
 
@@ -88,7 +89,11 @@ class Cursor implements Iterator
             $this->current       = null;
             $this->started       = true;
 
-            return is_array($results) ? $results : [];
+            if (! is_array($results)) {
+                return [];
+            }
+
+            return array_map(static fn ($doc) => is_array($doc) ? new Document($doc) : $doc, $results);
         }
 
         $this->ensureCursor();
@@ -100,7 +105,7 @@ class Cursor implements Iterator
         $raw = zealphp_mongodb_cursor_to_array($this->cursorId);
         if (is_array($raw)) {
             foreach ($raw as $doc) {
-                $results[] = $doc;
+                $results[] = is_array($doc) ? new Document($doc) : $doc;
             }
         }
 
