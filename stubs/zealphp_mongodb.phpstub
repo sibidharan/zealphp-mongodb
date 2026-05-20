@@ -61,6 +61,8 @@ namespace MongoDB\Model {
     class BSONArray extends \ArrayObject {}
 }
 
+define('OPENSWOOLE_EVENT_READ', 512);
+
 namespace OpenSwoole {
     class Coroutine {
         public static function getCid(): int { return -1; }
