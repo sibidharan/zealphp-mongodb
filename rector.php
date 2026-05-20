@@ -12,4 +12,5 @@ return RectorConfig::configure()
     ->withSkip([
         __DIR__ . '/vendor',
         __DIR__ . '/php/src/AsyncBridge.php',
+        __DIR__ . '/php/src/compat',
     ]);
