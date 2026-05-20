@@ -1,318 +1,220 @@
-# Case Study: Achieving C-Driver Parity with a Dual Tokio Runtime
+# Case Study: Rust MongoDB Driver for PHP — Trading Per-Query Overhead for Coroutine Parallelism
 
 ## Background
 
 zealphp-mongodb is a Rust PHP extension that bridges the official [mongo-rust-driver](https://github.com/mongodb/mongo-rust-driver) into PHP. It replaces the C-based `ext-mongodb` + `mongodb/mongodb` PHP library stack with a single Rust extension plus a thin PHP OOP layer that mirrors the official API.
 
-The driver was deployed to production powering the [Selfmade Ninja Labs](https://labs.selfmade.ninja) platform — an educational environment running 87+ PHP sites under a single ZealPHP application server. In production, the driver exhibited two critical issues:
+The driver powers the [Selfmade Ninja Labs](https://labs.selfmade.ninja) platform — an educational environment running 87+ PHP sites under a single ZealPHP (OpenSwoole-based) application server. The design goal was not to beat the C driver on individual query latency, but to enable **coroutine-level parallelism** that the C driver architecture cannot provide.
 
-1. **Performance gap**: Synchronous MongoDB operations were 70-100% slower than the C driver
-2. **Cursor corruption**: "Invalid cursor ID" errors under concurrent load
+## Architecture
 
-This document traces the investigation, root cause analysis, and the architectural fix that brought the Rust driver to within 3% of C driver performance.
+### Dual Tokio Runtime
 
-## The Problem
-
-### Performance Regression
-
-Benchmarks on a real workload (the Labs dashboard, hitting MongoDB for every page render) showed:
-
-| Operation | C Driver (ext-mongodb) | zealphp-mongodb v0.1.1 | Gap |
-|-----------|----------------------|----------------------|-----|
-| findOne | ~0.8ms | ~1.5ms | +87% |
-| find + drain cursor | ~2.1ms | ~3.6ms | +71% |
-| insertOne | ~0.9ms | ~1.6ms | +78% |
-
-Users would notice this on every page load. At 87 sites and hundreds of concurrent requests, the cumulative effect was significant.
-
-### Cursor Corruption
-
-Under concurrent load, the server produced errors like:
-
-```
-Exception: Invalid cursor ID: 94
-  at zealphp_mongodb_cursor_close(/home/labs/zealphp-mongodb/php/src/Cursor.php:75)
-```
-
-Cursor IDs are integers assigned by the Rust extension's internal HashMap. Under the original architecture, cursor operations on the sync path were being dispatched to a shared multi-thread runtime where timing issues could cause cursor state corruption.
-
-## Root Cause: Multi-Thread Runtime for Synchronous Operations
-
-The original architecture used a single `tokio` multi-thread runtime for everything:
-
-```rust
-static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
-    Runtime::new().unwrap() // multi_thread, default worker count
-});
-```
-
-Every synchronous MongoDB call — `find_one`, `insert_one`, `aggregate` — went through `RUNTIME.block_on(future)`. This is the canonical way to call async code from sync context, but with a multi-thread runtime it introduces overhead:
-
-1. **Thread coordination**: `block_on` on a multi-thread runtime must park the calling thread and coordinate with worker threads to poll the future
-2. **Cross-thread wakeups**: The future runs on a worker thread; completing it requires waking the blocked calling thread
-3. **Contention**: Multiple PHP workers calling `block_on` simultaneously contend for the runtime's shared task queue
-
-Each `block_on` call added ~0.19ms of overhead. For a findOne that takes ~0.8ms on the wire, that's a 24% tax before the operation even reaches MongoDB.
-
-### Why Not Just Use current_thread Everywhere?
-
-A `current_thread` runtime is single-threaded — `block_on` runs the future directly on the calling thread with no coordination overhead. But it cannot `spawn()` tasks that outlive the `block_on` call, which is exactly what the async/coroutine path needs.
-
-The async path (`zealphp_mongodb_exec_async`, cursor streaming) spawns a future and returns immediately — the future runs in the background while PHP continues execution. This requires a multi-thread runtime with persistent worker threads.
-
-## The Solution: Dual Runtime Architecture
-
-The fix separates sync and async concerns into two dedicated runtimes:
+The extension maintains two separate tokio runtimes, each optimized for its use case:
 
 ```rust
 // Sync path: current_thread — zero coordination overhead on block_on
-static SYNC_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-});
+static SYNC_RUNTIME: current_thread runtime
 
 // Async path: multi_thread with 1 worker — for spawned background tasks
-static ASYNC_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .unwrap()
-});
+static ASYNC_RUNTIME: multi_thread runtime (1 worker)
 ```
 
-### Sync Path (95% of calls)
+**Sync path** (Apache, CLI, PHPUnit): All blocking operations use `SYNC_RUNTIME.block_on()`. The future runs inline on the calling thread — no worker threads, no cross-thread wakes.
 
-All blocking operations — `find_one`, `insert_one`, `update_one`, `aggregate`, `count_documents`, etc. — use `SYNC_RUNTIME.block_on()`. The future runs inline on the calling thread. No worker threads, no cross-thread wakes, no contention.
+**Async path** (ZealPHP coroutines): Operations spawn on `ASYNC_RUNTIME` and return immediately. The future completes in the background, notifying PHP through an eventfd bridge that wakes the suspended coroutine via `OpenSwoole\Coroutine\System::waitEvent()`.
 
-```rust
-pub fn runtime() -> &'static Runtime {
-    &SYNC_RUNTIME
-}
+The PHP `Collection` API is identical for both paths — `AsyncBridge` detects the execution context and routes automatically:
 
-// In each PHP-exported function:
-let result = runtime().block_on(async {
-    collection.find_one(filter).await
-});
 ```
-
-### Async Path (5% of calls)
-
-Background operations — `exec_async`, cursor streaming, batch fetching — use `ASYNC_RUNTIME.spawn()`. These futures outlive the PHP call and complete asynchronously, notifying PHP through the eventfd bridge.
-
-```rust
-pub fn async_runtime() -> &'static Runtime {
-    &ASYNC_RUNTIME
-}
-
-// In async-spawning functions:
-async_runtime().spawn(async move {
-    let result = collection.find(filter).await;
-    // ... notify PHP via eventfd
-});
+PHP Request
+     │
+     ├── Outside coroutine (Apache/CLI)
+     │    └── SYNC_RUNTIME.block_on(future) → blocks until complete
+     │
+     └── Inside coroutine (ZealPHP)
+          └── ASYNC_RUNTIME.spawn(future) → returns immediately
+               ├── async_client → MongoDB
+               └── eventfd → coroutine wakeup
 ```
 
 ### Lazy Async Client
 
-MongoDB clients hold connection pools and are tied to the runtime they're created on. The dual runtime requires separate clients:
+MongoDB clients hold connection pools tied to the runtime they're created on. The sync client is created at `connect()` time. The async client is created lazily on first coroutine use — most CLI/worker processes never touch it.
 
-```rust
-pub struct PoolEntry {
-    client: Client,             // Created on SYNC_RUNTIME (always)
-    async_client: Option<Client>, // Created lazily on ASYNC_RUNTIME (on first async use)
-    uri: String,                // Stored for lazy async client creation
-}
+### RawDocumentBuf Zero-Copy Path
 
-pub fn get_async_client(pool_id: u64) -> Result<Client, String> {
-    let mut pools = POOLS.lock().unwrap();
-    let entry = pools.get_mut(&pool_id).ok_or("Invalid pool ID")?;
-    if entry.async_client.is_none() {
-        let client = async_runtime().block_on(Client::with_uri_str(&entry.uri))
-            .map_err(|e| e.to_string())?;
-        entry.async_client = Some(client);
-    }
-    Ok(entry.async_client.as_ref().unwrap().clone())
-}
-```
+BSON conversion uses `RawDocumentBuf` instead of the intermediate `bson::Document` tree. `RawBsonRef` provides zero-copy views into the BSON byte buffer — strings are borrowed slices, not owned allocations. This eliminates one full deserialization pass per document.
 
-The sync client is created at `connect()` time (always needed). The async client is created only on first async use — most request cycles never touch it.
+## Per-Operation Benchmarks
 
-## Results
+All benchmarks: 100 iterations each, median timing, PHP 8.4.5, MongoDB 6.0, same host.
 
-### Benchmark: After Dual Runtime
+### Sync Path (no OpenSwoole)
 
-| Operation | C Driver | zealphp-mongodb (dual) | Gap |
-|-----------|----------|----------------------|-----|
-| findOne | ~0.8ms | ~0.82ms | **+3%** |
-| find + drain cursor | ~2.1ms | ~1.98ms | **-6% (faster)** |
-| insertOne | ~0.9ms | ~0.93ms | +3% |
+| Operation | zealphp-mongodb | ext-mongodb (C) | Gap |
+|-----------|----------------|-----------------|-----|
+| findOne | 0.620ms | 0.427ms | +45% |
+| find(50) | 0.790ms | 0.442ms | +79% |
+| find(1000) | 5.997ms | 3.283ms | +83% |
+| insertOne | 0.479ms | 0.281ms | +70% |
+| updateOne | 0.660ms | 0.462ms | +43% |
+| deleteOne | 0.965ms | 0.597ms | +62% |
+| countDocuments | 0.955ms | 0.722ms | +32% |
+| aggregate | 1.525ms | 1.328ms | +15% |
+| distinct | 0.959ms | 0.769ms | +25% |
+| findOneAndUpdate | 0.732ms | 0.497ms | +47% |
 
-The 70-100% gap collapsed to 3%. On find-with-cursor operations, the Rust driver is actually 6% faster than the C driver — the Rust MongoDB driver's cursor implementation is more efficient than the C driver's PHP-level iteration.
+**Per-operation, the Rust driver is 15-83% slower than the C driver.** This is the inherent cost of the Rust → PHP FFI bridge (`ext-php-rs`). The C driver converts BSON to PHP zvals in native C within the same process; our path crosses the Rust FFI boundary for every value.
 
-### countDocuments: An Expected Outlier
+### Async Path (inside OpenSwoole coroutine)
 
-One operation remained slower: `countDocuments` showed a ~123% gap. This is not a driver inefficiency — it's a specification difference:
+| Operation | zealphp-mongodb (async) | ext-mongodb (C) | Gap |
+|-----------|------------------------|-----------------|-----|
+| findOne | 0.595ms | 0.446ms | +33% |
+| find(50) | 0.844ms | 0.499ms | +69% |
+| find(1000) | 9.098ms | 3.676ms | +148% |
+| insertOne | 0.346ms | 0.292ms | +19% |
+| updateOne | 0.545ms | 0.467ms | +17% |
+| countDocuments | 0.870ms | 0.750ms | +16% |
+| aggregate | 1.432ms | 1.249ms | +15% |
+| distinct | 0.835ms | 0.724ms | +15% |
 
-- The **Rust driver** implements `countDocuments` using an aggregation pipeline (`$match` + `$group` with `$sum`), per the [MongoDB specification](https://github.com/mongodb/specifications/blob/master/source/crud/crud.md#count-api-details) which deprecated the `count` command
-- The **C driver benchmark** used the raw `count` command, which is faster but deprecated and can return inaccurate results on sharded clusters
+The async path adds eventfd overhead for cursor-heavy operations (find 1000), but write operations (insertOne, updateOne) are only 15-19% slower — the eventfd round-trip is amortized over the network latency.
 
-The Rust driver's approach is correct per spec. The performance difference is the cost of accuracy.
+**The per-operation gap is real. But per-operation latency is not the metric that matters.**
 
-### Cursor Stability
+## Where It Wins: Coroutine Parallelism
 
-The cursor corruption issue was resolved as a side effect of the runtime separation. With sync operations running on `current_thread`, cursor creation and consumption happen deterministically on the same thread, eliminating the race condition.
+The C driver blocks the entire PHP process on every MongoDB call. Under Apache's prefork MPM, that means one connection = one process = one query at a time.
 
-A stress test of 40 concurrent cursor-heavy requests completed with 0 errors, confirming the fix.
+The Rust driver yields the coroutine during I/O. Under ZealPHP, multiple queries execute concurrently within a single process — different requests interleave, and independent queries within a single request can run in parallel.
 
-## Production Deployment
+### Intra-Request Parallelism
 
-### ext-mongodb Compatibility
+Real benchmark: 4 independent queries executed sequentially vs. in parallel coroutines.
 
-The production environment had both `ext-mongodb` (C driver) and `zealphp-mongodb` (Rust driver) loaded. ext-mongodb 2.x changed the `bsonSerialize()` return type signature, causing a fatal error when the PHP MongoDB library (which expects ext-mongodb 1.x) tried to use `BSONDocument`:
+| Pattern | Time | vs. Sequential |
+|---------|------|----------------|
+| 4 × findOne sequential | 2.330ms | baseline |
+| 4 × findOne parallel (4 coroutines) | 0.689ms | **3.4x faster** |
+| 4 × aggregate sequential | 4.489ms | baseline |
+| 4 × aggregate parallel (4 coroutines) | 1.158ms | **3.9x faster** |
 
-```
-Declaration of MongoDB\Model\BSONDocument::bsonSerialize() must be compatible
-with MongoDB\BSON\Serializable::bsonSerialize(): array|stdClass|\MongoDB\BSON\Document
-```
+A single parallel findOne (0.689ms / 4 = 0.172ms effective per query) is faster than even the C driver's 0.427ms sequential findOne. **Parallelism more than compensates for the per-operation overhead.**
 
-The fix: ZealPHP runs with a custom PHP config directory that includes all CLI extensions except `ext-mongodb`:
+### Production Deployment: Page Response Times
 
-```bash
-ZEALPHP_CONFDIR=/etc/php/8.4/zealphp/conf.d
-mkdir -p "$ZEALPHP_CONFDIR"
-for f in /etc/php/8.4/cli/conf.d/*.ini; do
-    case "$(basename "$f")" in *mongodb*) continue;; esac
-    cp "$f" "$ZEALPHP_CONFDIR/"
-done
-PHP_INI_SCAN_DIR="$ZEALPHP_CONFDIR" php -c "$ZEALPHP_INI" server.php start -d
-```
+Real production measurements (median of 10 requests each):
 
-Cron workers and CLI scripts still use the default PHP config with ext-mongodb available.
+| Route | ZealPHP (Rust) | Apache (C) | Winner |
+|-------|---------------|------------|--------|
+| `/` (landing) | 213ms | 245ms | ZealPHP |
+| `/features` | 16ms | 40ms | ZealPHP (2.5x) |
+| `/about` | 424ms | 428ms | ~tie |
+| `/community-guidelines` | 45ms | 35ms | Apache |
+| `/leaderboard-global` | 53ms | 43ms | Apache |
 
-### Feature Parity Verification
+API endpoints:
 
-After deploying the optimized driver, full parity testing confirmed identical behavior between ZealPHP (Rust driver) and Apache (C driver):
+| Endpoint | ZealPHP (Rust) | Apache (C) | Winner |
+|----------|---------------|------------|--------|
+| `/api/portfolio/get_plans` | 204ms | 225ms | ZealPHP |
+| `/api/portfolio/get_labslist` | 11ms | 30ms | ZealPHP (2.7x) |
+| `/api/leaderboard/get_ninja_leaderboard` | 11ms | 30ms | ZealPHP (2.7x) |
+| `/api/gstats/labs/public` | 10ms | 30ms | ZealPHP (3.0x) |
 
-- **13 public pages**: All returned matching status codes and content
-- **14 authenticated pages**: All rendered identically
-- **9 API endpoints**: All returned matching JSON responses
-- **15 ZealPHP workers**: 0 crashes, 0 fatal errors after deployment
+Despite the per-query overhead, ZealPHP matches or beats Apache on most routes because:
+1. No process fork overhead per request
+2. Shared boot state (classes, config, connection pools loaded once)
+3. Coroutine-aware I/O yields during DB calls
+
+### Throughput Under Concurrency
+
+This is where the architecture difference is most dramatic. Apache spawns a process per request; ZealPHP multiplexes all requests on coroutines within a single process.
+
+`ab -n 100 -c 20` (100 requests, 20 concurrent):
+
+| Endpoint | ZealPHP | Apache | Ratio |
+|----------|---------|--------|-------|
+| `/api/portfolio/get_labslist` | **556 req/s** | 35 req/s | **16x** |
+| `/api/leaderboard/get_ninja_leaderboard` | **724 req/s** | 244 req/s | **3.0x** |
+| `/` (full page render) | **13.6 req/s** | 4.5 req/s | **3.0x** |
+| `/features` (full page) | **405 req/s** | 144 req/s | **2.8x** |
+
+**Zero failed requests** across all throughput tests on both servers.
+
+## Coroutine Safety
+
+The driver was validated for correctness under concurrent coroutine execution:
+
+| Test | Result |
+|------|--------|
+| All CRUD operations (async path) | 12/12 pass |
+| 2 concurrent coroutines, independent collections | Pass |
+| 10 concurrent insert+read coroutines | Pass |
+| 20 concurrent read-update-read coroutines | Pass |
+| 3 concurrent cursor iterations (10 docs each) | Pass |
+
+No data corruption, no cursor leaks, no cross-coroutine state bleed.
+
+## Test Suite
+
+| Suite | Tests | Status |
+|-------|-------|--------|
+| Unit (BSON types, exceptions, concerns) | 66 | All pass |
+| Integration (CRUD, cursors, aggregation) | 30 | All pass |
+| Async CRUD (OpenSwoole coroutine context) | 12 | All pass |
+| Concurrency (multi-coroutine stress) | 4 | All pass |
+
+Total: **112 tests, 0 failures.**
+
+## Parallelism Opportunities in Production
+
+Two endpoints already use coroutine parallelism:
+
+| Endpoint | Pattern | Speedup |
+|----------|---------|---------|
+| `DashboardAnalyticsComputer` | 5 independent queries via `go()` | ~4x |
+| `/api/profile/profile` | 4 stats queries in parallel | ~3-4x |
+
+Identified but not yet parallelized:
+
+| Endpoint | Sequential Queries | Potential |
+|----------|-------------------|-----------|
+| `/api/dashboard/setup` | 4 independent (labs, devices, domains, events) | ~3-4x |
+| `/api/event/get_metrics` | 6+ independent aggregations | ~2-3x |
+| `/api/event/get_leaderboard` | 3 independent (totals, leaderboard, users) | ~2-3x |
 
 ## Architecture Diagram
 
 ```
-PHP Request Thread
-     │
-     ├─── Sync operations (95%)
-     │    └── SYNC_RUNTIME (current_thread)
-     │         └── block_on(future)  ← runs inline, zero overhead
-     │              └── sync_client → MongoDB
-     │
-     └─── Async operations (5%)
-          └── ASYNC_RUNTIME (multi_thread, 1 worker)
-               └── spawn(future)  ← returns immediately
-                    ├── async_client → MongoDB
-                    └── eventfd → PHP coroutine wakeup
+Apache (ext-mongodb C driver)            ZealPHP (zealphp-mongodb Rust driver)
+─────────────────────────────            ─────────────────────────────────────
+                                         
+  Request → fork process                   Request → create coroutine
+       │                                        │
+       ├── query 1 (blocks) ─── 0.4ms          ├── query 1 (yields) ──┐
+       ├── query 2 (blocks) ─── 0.4ms          ├── query 2 (yields) ──┤ concurrent
+       ├── query 3 (blocks) ─── 0.4ms          ├── query 3 (yields) ──┤   ~0.6ms
+       ├── query 4 (blocks) ─── 0.4ms          ├── query 4 (yields) ──┘   total
+       │                                        │
+       └── total: ~1.6ms + fork overhead        └── total: ~0.6ms, no fork
+                                         
+  20 concurrent: 20 processes              20 concurrent: 20 coroutines
+  Memory: 20 × ~30MB = 600MB              Memory: 1 process, ~50MB total
 ```
-
-## Phase 2: RawDocumentBuf Zero-Copy Path
-
-The dual runtime fix brought single-document operations to parity, but multi-document cursor drains still lagged:
-
-| Operation | C Driver | zealphp-mongodb (dual runtime) | Gap |
-|-----------|----------|-------------------------------|-----|
-| find(50 docs) | ~0.50ms | ~0.77ms | +53% |
-| find(1000 docs) | ~4.15ms | ~12.7ms | +206% |
-
-### Root Cause: Double Deserialization
-
-The original cursor path deserialized BSON wire data twice:
-
-1. **Wire → bson::Document**: The Rust MongoDB driver parses BSON bytes into its in-memory `Document` tree (heap-allocated HashMap of owned `Bson` values)
-2. **Document → PHP zval**: Our `doc_to_php` walks the `Document`, pattern-matches each `Bson` variant, and builds PHP arrays/values
-
-For a single document, this overhead is negligible. For 1000 documents, the intermediate `Document` allocation dominates — each document creates a full owned tree that's immediately discarded after PHP conversion.
-
-### The Fix: RawDocumentBuf
-
-The MongoDB Rust driver supports `Collection<RawDocumentBuf>`, which returns raw BSON bytes without parsing them into `Document`. Our new `raw_doc_to_php` reads directly from the BSON byte buffer:
-
-```rust
-pub fn raw_doc_to_php(raw: &RawDocumentBuf) -> Zval {
-    let mut ht = ZendHashTable::new();
-    for result in raw.iter() {
-        if let Ok((key, val)) = result {
-            let _ = ht.insert(key, raw_bson_to_zval(val));
-        }
-    }
-    // ...
-}
-```
-
-`RawBsonRef` is a zero-copy view into the BSON buffer — strings are borrowed slices, not owned allocations. The iteration is a linear scan over the byte buffer, not a HashMap traversal.
-
-### Cursor Store: AnyCursor Enum
-
-MongoDB's `Collection::aggregate()` always returns `Cursor<Document>` regardless of the collection's type parameter — this is a driver constraint. To support both cursor types in a single store:
-
-```rust
-pub enum AnyCursor {
-    Raw(Cursor<RawDocumentBuf>),  // find, find_one — zero-copy path
-    Doc(Cursor<Document>),        // aggregate — conversion at read time
-}
-
-impl AnyCursor {
-    pub async fn next_raw(&mut self) -> Option<Result<RawDocumentBuf, Error>> {
-        match self {
-            AnyCursor::Raw(c) => c.next().await,
-            AnyCursor::Doc(c) => match c.next().await {
-                Some(Ok(doc)) => Some(RawDocumentBuf::from_document(&doc).map_err(..)),
-                // ...
-            },
-        }
-    }
-}
-```
-
-### Results: After RawDocumentBuf
-
-Full benchmark suite (100 iterations each, median timing):
-
-| Operation | zealphp-mongodb | ext-mongodb (C) | Gap |
-|-----------|----------------|-----------------|-----|
-| findOne | 0.444ms | 0.454ms | **-2.3%** |
-| find(50) | 0.660ms | 0.498ms | +32.6% |
-| find(1000) | 8.707ms | 4.151ms | +109.7% |
-| insertOne | 0.274ms | 0.281ms | **-2.5%** |
-| updateOne | 0.491ms | 0.513ms | **-4.4%** |
-| deleteOne | 0.588ms | 0.614ms | **-4.2%** |
-| countDocuments | 0.742ms | 0.805ms | **-7.9%** |
-| aggregate | 1.201ms | 1.269ms | **-5.4%** |
-| distinct | 0.736ms | 0.735ms | +0.1% |
-| findOneAndUpdate | 0.489ms | 0.513ms | **-4.6%** |
-
-**8 out of 10 operations are faster than the C driver.** The remaining gap on bulk cursor reads (find 50/1000) is the fundamental cost of the Rust FFI bridge — the C driver converts BSON to PHP zvals in native C code within the same process, while our path goes through Rust's `ext-php-rs` FFI layer.
-
-### Improvement Summary
-
-| Operation | Before (dual runtime) | After (+ RawDocumentBuf) | Improvement |
-|-----------|----------------------|--------------------------|-------------|
-| findOne | +3% | -2.3% | 5pp better |
-| find(50) | +53% | +32.6% | 39% reduction |
-| find(1000) | +206% | +109.7% | 47% reduction |
 
 ## Key Takeaways
 
-1. **`block_on` on a multi-thread runtime is expensive for small operations**. The coordination overhead (~0.19ms) is negligible for long-running tasks but devastating for sub-millisecond database calls.
+1. **Per-operation latency is not the whole story.** The Rust driver is 15-83% slower per query than the C driver, but the coroutine architecture enables parallelism that more than compensates — 4 parallel findOne calls complete in 0.69ms vs 1.7ms sequential on the C driver.
 
-2. **Separate runtimes for separate concerns**. Sync and async have fundamentally different execution models — forcing them onto one runtime compromises both.
+2. **Throughput scales with architecture, not driver speed.** ZealPHP handles 3-16x more concurrent requests than Apache on the same hardware. The bottleneck shifts from "how fast is one query" to "how many queries can overlap."
 
-3. **Lazy resource creation matters**. Most PHP requests never use the async path. Creating the async client eagerly would double connection pool usage for no benefit.
+3. **Dual runtimes for dual execution models.** The `current_thread` sync runtime eliminates coordination overhead for blocking calls. The `multi_thread` async runtime enables fire-and-forget spawning for coroutine integration.
 
-4. **Zero-copy BSON pays off at scale**. For single documents, the overhead of intermediate `Document` allocation is negligible. For cursor drains of hundreds or thousands of documents, `RawDocumentBuf` eliminates a full allocation tree per document.
+4. **Zero-copy BSON reduces but doesn't eliminate the FFI gap.** `RawDocumentBuf` avoids one full deserialization pass, but the Rust→PHP value conversion still crosses the FFI boundary per field. Bulk cursor reads (1000 docs) remain the weakest point.
 
-5. **Driver constraints require pragmatic abstractions**. MongoDB's Rust driver constrains `aggregate()` to always return `Cursor<Document>`. The `AnyCursor` enum handles this transparently without leaking the distinction to callers.
+5. **Lazy resource creation matters.** The async MongoDB client is created only on first coroutine use. CLI scripts and workers never pay the cost.
 
-6. **Cursor stability requires deterministic execution**. Running cursor operations on a single-threaded runtime eliminates a class of concurrency bugs that are hard to reproduce and debug.
+6. **Cursor stability requires deterministic execution.** Running cursor operations on a single-threaded runtime eliminated a class of concurrency bugs that were hard to reproduce under the shared multi-thread runtime.
