@@ -47,10 +47,35 @@ function zealphp_mongodb_async_result(int $taskId): mixed {}
 function zealphp_mongodb_batch_result(int $taskId): array {}
 function zealphp_mongodb_close_efd(int $efd): void {}
 
+namespace MongoDB\BSON {
+    class ObjectId { public function __construct(string $id = '') {} public function __toString(): string { return ''; } }
+    class UTCDateTime { public function __construct(int $milliseconds = 0) {} public function toDateTime(): \DateTime { return new \DateTime(); } }
+    class Regex { public function __construct(string $pattern, string $flags = '') {} }
+}
+
 namespace MongoDB\Model {
     /** @template-extends \ArrayObject<string, mixed> */
     class BSONDocument extends \ArrayObject {}
 
     /** @template-extends \ArrayObject<int, mixed> */
     class BSONArray extends \ArrayObject {}
+}
+
+namespace OpenSwoole {
+    class Coroutine {
+        public static function getCid(): int { return -1; }
+        /** @param callable(): mixed $callback */
+        public static function create(callable $callback): int { return 0; }
+        public static function exec(string $command, bool $getStdErr = false): array { return []; }
+    }
+    class Event {
+        public static function add(int $fd, callable $read = null, callable $write = null, int $flags = 0): bool { return false; }
+        public static function del(int $fd): bool { return false; }
+    }
+}
+
+namespace OpenSwoole\Coroutine {
+    class System {
+        public static function waitEvent(int $fd, int $events = 0, float $timeout = -1): int|false { return 0; }
+    }
 }
