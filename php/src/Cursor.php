@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB;
 
 use Iterator;
 
+use function function_exists;
 use function is_array;
 use function zealphp_mongodb_cursor_close;
 use function zealphp_mongodb_cursor_next;
@@ -126,7 +127,7 @@ class Cursor implements Iterator
 
     private function canUseFindAll(): bool
     {
-        return !$this->started
+        return ! $this->started
             && $this->deferredQuery !== null
             && $this->cursorId === null
             && function_exists('zealphp_mongodb_find_all');
