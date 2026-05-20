@@ -7,7 +7,6 @@ namespace ZealPHP\MongoDB;
 use Stringable;
 
 use function array_merge;
-use function is_array;
 use function zealphp_mongodb_create_collection;
 use function zealphp_mongodb_drop_collection;
 use function zealphp_mongodb_drop_database;
@@ -53,7 +52,7 @@ class Database implements Stringable
         $cmd = Collection::prepareBSON((array) $command);
         $result = zealphp_mongodb_run_command($this->poolId, $this->databaseName, $cmd);
 
-        return is_array($result) ? $result : [$result];
+        return (array) $result;
     }
 
     public function aggregate(array $pipeline, array $options = []): ArrayCursor
