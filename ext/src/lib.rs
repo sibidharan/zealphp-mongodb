@@ -12,7 +12,7 @@ use ext_php_rs::types::{ZendHashTable, Zval};
 #[php_function]
 pub fn zealphp_mongodb_version() -> String {
     coroutine::init_runtime();
-    "0.1.1".to_string()
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 #[php_function]
