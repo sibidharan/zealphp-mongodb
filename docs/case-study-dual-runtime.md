@@ -4,7 +4,7 @@
 
 zealphp-mongodb is a Rust PHP extension that bridges the official [mongo-rust-driver](https://github.com/mongodb/mongo-rust-driver) into PHP. It replaces the C-based `ext-mongodb` + `mongodb/mongodb` PHP library stack with a single Rust extension plus a thin PHP OOP layer that mirrors the official API.
 
-The driver powers the [Selfmade Ninja Labs](https://labs.selfmade.ninja) platform — an educational environment running 87+ PHP sites under a single ZealPHP (OpenSwoole-based) application server. The design goal was not to beat the C driver on individual query latency, but to enable **coroutine-level parallelism** that the C driver architecture cannot provide.
+The driver powers the [Selfmade Ninja Labs](https://labs.selfmade.ninja) platform — an educational environment running 87+ PHP sites under a single ZealPHP (OpenSwoole-based) application server. The design goal was not to beat the C driver on individual query latency, but to enable **native coroutine-level parallelism** without relying on Swoole's C-level socket hooks to intercept `ext-mongodb`'s `libmongoc` calls — an approach that is fragile and doesn't cover all code paths.
 
 ## Architecture
 
@@ -83,9 +83,9 @@ All benchmarks: 200 iterations each, median timing, PHP 8.4.5, MongoDB 6.0, same
 
 ## Where It Wins: Coroutine Parallelism
 
-The C driver blocks the entire PHP process on every MongoDB call. Under Apache's prefork MPM, that means one connection = one process = one query at a time.
+Under Apache's prefork MPM, each pre-forked process handles one request at a time, executing queries sequentially. The driver's sync path (`SYNC_RUNTIME.block_on()`) blocks the calling thread until each query completes — there is no way to overlap I/O within a single request. With the C driver (`ext-mongodb`), Swoole's `Hook::ENABLE_ALL` can intercept `libmongoc`'s socket calls to add coroutine awareness, but this relies on hooking internal socket operations — it doesn't cover all code paths (e.g., DNS resolution, TLS handshake internals) and can't enable intra-request parallelism without explicit coroutine spawning in userland.
 
-The Rust driver yields the coroutine during I/O. Under ZealPHP, multiple queries execute concurrently within a single process — different requests interleave, and independent queries within a single request can run in parallel.
+The Rust driver's async path is native: tokio futures yield naturally during I/O without external hook interception. Under ZealPHP, multiple queries execute concurrently within a single process — different requests interleave, and independent queries within a single request can run in parallel.
 
 ### Intra-Request Parallelism
 
@@ -100,46 +100,46 @@ Real benchmark: 4 independent queries executed sequentially vs. in parallel coro
 
 A single parallel findOne (0.689ms / 4 = 0.172ms effective per query) is faster than even the C driver's 0.427ms sequential findOne. **Parallelism more than compensates for the per-operation overhead.**
 
-### Production Deployment: Page Response Times
+### Production Deployment: Response Times and Throughput
 
-Real production measurements (median of 10 requests each):
+Both servers run inside the same Docker container, serving the same PHP codebase from the same volume. Apache uses `ext-mongodb` (C driver) with prefork MPM (MaxRequestWorkers=150). ZealPHP uses `zealphp-mongodb` (Rust driver) with OpenSwoole (12 workers). PHP ini files are split per SAPI — Apache loads `mongodb.so`, CLI/ZealPHP loads `zealphp_mongodb.so`. AMD Ryzen 9 7900X, PHP 8.4, OPcache enabled on both.
 
-| Route | ZealPHP (Rust) | Apache (C) | Winner |
-|-------|---------------|------------|--------|
-| `/` (landing) | 213ms | 245ms | ZealPHP |
-| `/features` | 16ms | 40ms | ZealPHP (2.5x) |
-| `/about` | 424ms | 428ms | ~tie |
-| `/community-guidelines` | 45ms | 35ms | Apache |
-| `/leaderboard-global` | 53ms | 43ms | Apache |
+**Methodology:** Throughput benchmarks use `ab` from inside the container hitting `localhost` directly (bypassing Traefik reverse proxy, which rate-limits at 30 avg/3s and would cap results). All requests include `Host: labsdev.selfmade.ninja` to match OAuth config. Latency percentiles from `ab -n 200 -c 10`.
 
-API endpoints:
+### Latency
 
-| Endpoint | ZealPHP (Rust) | Apache (C) | Winner |
-|----------|---------------|------------|--------|
-| `/api/portfolio/get_plans` | 204ms | 225ms | ZealPHP |
-| `/api/portfolio/get_labslist` | 11ms | 30ms | ZealPHP (2.7x) |
-| `/api/leaderboard/get_ninja_leaderboard` | 11ms | 30ms | ZealPHP (2.7x) |
-| `/api/gstats/labs/public` | 10ms | 30ms | ZealPHP (3.0x) |
+| Route | ZealPHP p50 | Apache p50 | ZealPHP p95 | Apache p95 |
+|-------|-------------|------------|-------------|------------|
+| `/` (landing, 5 DB + 1 API query, cached) | 20ms | 78ms | 27ms | 109ms |
+| `/features` (light page) | 5ms | 37ms | 11ms | 47ms |
 
-Despite the per-query overhead, ZealPHP matches or beats Apache on most routes because:
-1. No process fork overhead per request
-2. Shared boot state (classes, config, connection pools loaded once)
-3. Coroutine-aware I/O yields during DB calls
+The landing page uses Redis-cached stats (5 MongoDB counts + 1 GitLab API call, 300s TTL). Under ZealPHP, the 5 count queries run in parallel coroutines when the cache is cold; Apache executes them sequentially.
 
-### Throughput Under Concurrency
+### Throughput
 
-This is where the architecture difference is most dramatic. Apache spawns a process per request; ZealPHP multiplexes all requests on coroutines within a single process.
+`ab` from inside container → `localhost`, `c=10`, `n=200`:
 
-`ab -n 100 -c 20` (100 requests, 20 concurrent):
-
-| Endpoint | ZealPHP | Apache | Ratio |
-|----------|---------|--------|-------|
-| `/api/portfolio/get_labslist` | **556 req/s** | 35 req/s | **16x** |
-| `/api/leaderboard/get_ninja_leaderboard` | **724 req/s** | 244 req/s | **3.0x** |
-| `/` (full page render) | **13.6 req/s** | 4.5 req/s | **3.0x** |
-| `/features` (full page) | **405 req/s** | 144 req/s | **2.8x** |
+| Endpoint | ZealPHP (Rust) | Apache (C) | Ratio |
+|----------|---------------|------------|-------|
+| `/features` (light page) | **1699 req/s** | 254 req/s | **6.7x** |
+| `/` (landing, cached) | **465 req/s** | 120 req/s | **3.9x** |
 
 **Zero failed requests** across all throughput tests on both servers.
+
+ZealPHP is faster on both endpoints. On the landing page, Redis caching eliminates the external API call (~190ms to GitLab) and parallel coroutines reduce cold-cache rebuild time. The 3.9x landing page advantage comes from both the application server architecture (coroutine reuse vs prefork overhead) and the driver's async path enabling parallel I/O. On lightweight pages, Apache's per-request overhead (process bootstrapping, module init, autoloader cold path) becomes the bottleneck, giving ZealPHP a 6.7x throughput advantage.
+
+ZealPHP's advantage comes from:
+1. No per-request process allocation — coroutines within pre-booted workers
+2. Shared boot state (classes, config, connection pools loaded once at startup)
+3. Near-zero per-request overhead (~20ms vs ~78ms for the landing page, ~5ms vs ~37ms for light pages)
+4. Coroutine parallelism for independent I/O operations (stats queries, API calls)
+
+### Known Limitations
+
+- ZealPHP throughput degrades when concurrent connections approach the worker count (12). This is an OpenSwoole dispatch behavior under investigation — at `c >= worker_num`, requests queue rather than multiplex via coroutines.
+- Landing page benchmarks reflect warm Redis cache (300s TTL). Cold-cache requests add ~15-20ms (parallel DB queries) or ~190ms (GitLab API miss). Apache cold-cache is ~200ms+ (sequential).
+
+**Comparison scope:** These benchmarks compare ZealPHP against Apache prefork with `mod_php` — the deployment used by this project. The industry-standard high-performance PHP stack (nginx + php-fpm) would narrow the gap on throughput, though it still cannot provide intra-request query parallelism without Swoole coroutine hooks.
 
 ## Coroutine Safety
 
@@ -168,12 +168,13 @@ Total: **112 tests, 0 failures.**
 
 ## Parallelism Opportunities in Production
 
-Two endpoints already use coroutine parallelism:
+Three endpoints already use coroutine parallelism:
 
 | Endpoint | Pattern | Speedup |
 |----------|---------|---------|
 | `DashboardAnalyticsComputer` | 5 independent queries via `go()` | ~4x |
 | `/api/profile/profile` | 4 stats queries in parallel | ~3-4x |
+| `/` landing page stats | 5 count queries via `go()` + Channel, Redis-cached (300s TTL) | ~3x (cold cache) |
 
 Identified but not yet parallelized:
 
@@ -186,27 +187,29 @@ Identified but not yet parallelized:
 ## Architecture Diagram
 
 ```
-Apache (ext-mongodb C driver)            ZealPHP (zealphp-mongodb Rust driver)
-─────────────────────────────            ─────────────────────────────────────
+Apache prefork (ext-mongodb, C driver)   ZealPHP (zealphp-mongodb, Rust driver)
+──────────────────────────────────────   ──────────────────────────────────────
                                          
-  Request → fork process                   Request → create coroutine
+  Request → assign pre-forked process      Request → create coroutine
        │                                        │
        ├── query 1 (blocks) ─── 0.4ms          ├── query 1 (yields) ──┐
        ├── query 2 (blocks) ─── 0.4ms          ├── query 2 (yields) ──┤ concurrent
        ├── query 3 (blocks) ─── 0.4ms          ├── query 3 (yields) ──┤   ~0.6ms
        ├── query 4 (blocks) ─── 0.4ms          ├── query 4 (yields) ──┘   total
        │                                        │
-       └── total: ~1.6ms + fork overhead        └── total: ~0.6ms, no fork
+       └── total: ~1.6ms sequential             └── total: ~0.6ms parallel
                                          
-  20 concurrent: 20 processes              20 concurrent: 20 coroutines
-  Memory: 20 × ~30MB = 600MB              Memory: 1 process, ~50MB total
+  20 concurrent: 20 pre-forked processes   20 concurrent: 20 coroutines
+  Memory: 20 processes (COW-shared,        Memory: 1 process, ~50MB total
+          unique RSS much less than
+          20 × full process size)
 ```
 
 ## Key Takeaways
 
 1. **Per-operation parity achieved.** After optimization (ClassEntry caching, single-call find_all, pre-allocated hash tables), 7 of 10 operations match or beat the C driver. Total overhead is +4.1% — effectively parity.
 
-2. **Throughput scales with architecture, not driver speed.** ZealPHP handles 3-16x more concurrent requests than Apache on the same hardware. The bottleneck shifts from "how fast is one query" to "how many queries can overlap."
+2. **Throughput scales with architecture, not driver speed.** ZealPHP handles 3.9x–6.7x more concurrent requests than Apache prefork on the same hardware. The advantage comes from eliminating per-request process overhead (20ms vs 78ms on the landing page, 5ms vs 37ms on `/features`) and coroutine parallelism for I/O-bound operations.
 
 3. **Dual runtimes for dual execution models.** The `current_thread` sync runtime eliminates coordination overhead for blocking calls. The `multi_thread` async runtime enables fire-and-forget spawning for coroutine integration.
 

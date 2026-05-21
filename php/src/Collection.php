@@ -504,7 +504,11 @@ class Collection
         }
 
         if (is_object($data)) {
-            return self::prepareBSON((array) $data);
+            $result = new \stdClass();
+            foreach ((array) $data as $key => $value) {
+                $result->$key = self::prepareBSON($value);
+            }
+            return $result;
         }
 
         return $data;

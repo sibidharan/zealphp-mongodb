@@ -101,34 +101,12 @@ fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
 }
 
 fn wrap_as_document(ht: ZBox<ZendHashTable>) -> Zval {
-    if let Some(ce) = get_ce_document() {
-        let obj = ce.new();
-        let mut arr_zval = Zval::new();
-        arr_zval.set_hashtable(ht);
-        if obj.try_call_method("__construct", vec![&arr_zval as &dyn ext_php_rs::convert::IntoZvalDyn]).is_ok() {
-            if let Ok(z) = obj.into_zval(false) {
-                return z;
-            }
-        }
-        return arr_zval;
-    }
     let mut zval = Zval::new();
     zval.set_hashtable(ht);
     zval
 }
 
 fn wrap_as_bson_array(ht: ZBox<ZendHashTable>) -> Zval {
-    if let Some(ce) = get_ce_bsonarray() {
-        let obj = ce.new();
-        let mut arr_zval = Zval::new();
-        arr_zval.set_hashtable(ht);
-        if obj.try_call_method("__construct", vec![&arr_zval as &dyn ext_php_rs::convert::IntoZvalDyn]).is_ok() {
-            if let Ok(z) = obj.into_zval(false) {
-                return z;
-            }
-        }
-        return arr_zval;
-    }
     let mut zval = Zval::new();
     zval.set_hashtable(ht);
     zval
@@ -282,6 +260,11 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
                 return Ok(Bson::RegularExpression(bson::Regex { pattern, options: flags }));
             }
         }
+        // Generic PHP object (e.g. stdClass) → BSON Document
+        if let Ok(props) = obj.get_properties() {
+            return Ok(Bson::Document(hash_table_to_doc(props)?));
+        }
+        return Ok(Bson::Document(Document::new()));
     }
     if let Some(arr) = zval.array() {
         if let Some(bson_type) = try_extended_json(arr)? {
