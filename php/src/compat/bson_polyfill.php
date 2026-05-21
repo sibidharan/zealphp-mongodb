@@ -517,3 +517,87 @@ namespace MongoDB {
         }
     }
 }
+
+namespace MongoDB\Operation {
+    if (! class_exists('MongoDB\Operation\FindOneAndUpdate', false)) {
+        class FindOneAndUpdate
+        {
+            public const RETURN_DOCUMENT_BEFORE = 1;
+            public const RETURN_DOCUMENT_AFTER = 2;
+        }
+    }
+
+    if (! class_exists('MongoDB\Operation\FindOneAndReplace', false)) {
+        class FindOneAndReplace
+        {
+            public const RETURN_DOCUMENT_BEFORE = 1;
+            public const RETURN_DOCUMENT_AFTER = 2;
+        }
+    }
+}
+
+namespace MongoDB\Driver {
+    if (! class_exists('MongoDB\Driver\WriteConcern', false)) {
+        class WriteConcern
+        {
+            public const MAJORITY = 'majority';
+
+            private string|int $w;
+            private int $wtimeout;
+
+            public function __construct(string|int $w = 1, int $wtimeout = 0)
+            {
+                $this->w = $w;
+                $this->wtimeout = $wtimeout;
+            }
+
+            public function getW(): string|int
+            {
+                return $this->w;
+            }
+
+            public function getWtimeout(): int
+            {
+                return $this->wtimeout;
+            }
+        }
+    }
+}
+
+namespace MongoDB\Driver\Exception {
+    if (! class_exists('MongoDB\Driver\Exception\Exception', false)) {
+        interface Exception extends \Throwable {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\RuntimeException', false)) {
+        class RuntimeException extends \RuntimeException implements Exception {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\BulkWriteException', false)) {
+        class BulkWriteException extends RuntimeException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\ConnectionException', false)) {
+        class ConnectionException extends RuntimeException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\AuthenticationException', false)) {
+        class AuthenticationException extends ConnectionException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\ConnectionTimeoutException', false)) {
+        class ConnectionTimeoutException extends ConnectionException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\ServerException', false)) {
+        class ServerException extends RuntimeException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\CommandException', false)) {
+        class CommandException extends ServerException {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\ExecutionTimeoutException', false)) {
+        class ExecutionTimeoutException extends ServerException {}
+    }
+}
