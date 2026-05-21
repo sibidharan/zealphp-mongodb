@@ -28,7 +28,9 @@ fn init_async_runtime() {
     ASYNC_INIT.call_once(|| {
         let rt = Box::new(
             tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
+                .worker_threads(2)
+                .max_blocking_threads(1)
+                .thread_stack_size(2 * 1024 * 1024)
                 .enable_all()
                 .build()
                 .expect("Failed to create async runtime"),
