@@ -10,6 +10,7 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
 use OpenSwoole\Coroutine\System;
+use stdClass;
 use ZealPHP\MongoDB\BSON\Binary;
 use ZealPHP\MongoDB\BSON\Decimal128;
 use ZealPHP\MongoDB\BSON\Int64;
@@ -504,10 +505,12 @@ class Collection
         }
 
         if (is_object($data)) {
-            $result = new \stdClass();
+            $result = new stdClass();
+
             foreach ((array) $data as $key => $value) {
                 $result->$key = self::prepareBSON($value);
             }
+
             return $result;
         }
 
