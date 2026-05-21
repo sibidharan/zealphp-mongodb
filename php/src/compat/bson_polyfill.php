@@ -518,24 +518,6 @@ namespace MongoDB {
     }
 }
 
-namespace MongoDB\Operation {
-    if (! class_exists('MongoDB\Operation\FindOneAndUpdate', false)) {
-        class FindOneAndUpdate
-        {
-            public const RETURN_DOCUMENT_BEFORE = 1;
-            public const RETURN_DOCUMENT_AFTER = 2;
-        }
-    }
-
-    if (! class_exists('MongoDB\Operation\FindOneAndReplace', false)) {
-        class FindOneAndReplace
-        {
-            public const RETURN_DOCUMENT_BEFORE = 1;
-            public const RETURN_DOCUMENT_AFTER = 2;
-        }
-    }
-}
-
 namespace MongoDB\Driver {
     if (! class_exists('MongoDB\Driver\WriteConcern', false)) {
         class WriteConcern
@@ -565,7 +547,7 @@ namespace MongoDB\Driver {
 }
 
 namespace MongoDB\Driver\Exception {
-    if (! class_exists('MongoDB\Driver\Exception\Exception', false)) {
+    if (! interface_exists('MongoDB\Driver\Exception\Exception', false)) {
         interface Exception extends \Throwable {}
     }
 
