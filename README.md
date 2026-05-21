@@ -27,7 +27,14 @@ Drop-in replacement for [`mongodb/mongodb`](https://github.com/mongodb/mongo-php
 | distinct | 0.795ms | 0.820ms | **-3.0%** |
 | findOneAndUpdate | 0.511ms | 0.539ms | **-5.1%** |
 
-With coroutine parallelism (ZealPHP/OpenSwoole), 4 parallel queries complete in **0.69ms** vs 1.7ms sequential on the C driver — **3.4x faster**. Under concurrency (`ab -n 100 -c 20`), throughput is **3-16x higher** than Apache + C driver.
+With coroutine parallelism (ZealPHP/OpenSwoole), 4 parallel queries complete in **0.69ms** vs 1.7ms sequential on the C driver — **3.4x faster**. Under HTTP concurrency (`ab -n 500 -c 20`), throughput is **3.9x–6.7x higher** than Apache + C driver:
+
+| Endpoint | Apache (C driver) | ZealPHP (Rust driver) | Speedup |
+|----------|-------------------|-----------------------|---------|
+| Landing page (5 DB queries) | 120 req/s · 78ms p50 | 465 req/s · 20ms p50 | **3.9x** |
+| /features (lightweight) | 254 req/s · 37ms p50 | 1699 req/s · 5ms p50 | **6.7x** |
+
+Measured in production on the same container, same MongoDB, same dataset (10k+ users). The landing page parallelizes 5 count queries via `Channel(5)` + `go()` coroutines; Apache runs them sequentially.
 
 See [docs/case-study-dual-runtime.md](docs/case-study-dual-runtime.md) for the full analysis.
 
@@ -66,7 +73,7 @@ sudo cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_d
 echo "extension=zealphp_mongodb.so" | sudo tee $(php --ini | grep "Scan for" | cut -d: -f2 | tr -d ' ')/99-zealphp-mongodb.ini
 
 # Verify
-php -r "echo zealphp_mongodb_version();"  # should print 0.2.0
+php -r "echo zealphp_mongodb_version();"  # should print 0.2.5
 ```
 
 ### Docker
