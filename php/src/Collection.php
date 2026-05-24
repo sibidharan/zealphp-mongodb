@@ -437,7 +437,7 @@ class Collection
             return new MaxKey();
         }
 
-        $wrapped = new Document();
+        $wrapped = new BSONDocument();
         foreach ($data as $key => $value) {
             $wrapped[$key] = is_array($value) ? self::wrapDoc($value) : $value;
         }
