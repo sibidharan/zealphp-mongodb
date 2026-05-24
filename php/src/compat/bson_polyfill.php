@@ -544,6 +544,173 @@ namespace MongoDB\Driver {
             }
         }
     }
+
+    if (! class_exists('MongoDB\Driver\WriteResult', false)) {
+        class WriteResult
+        {
+            private int $insertedCount;
+            private int $matchedCount;
+            private int $modifiedCount;
+            private int $deletedCount;
+            private int $upsertedCount;
+            private ?WriteConcernError $writeConcernError;
+            /** @var WriteError[] */
+            private array $writeErrors;
+
+            public function __construct(
+                int $insertedCount = 0,
+                int $matchedCount = 0,
+                int $modifiedCount = 0,
+                int $deletedCount = 0,
+                int $upsertedCount = 0,
+                ?WriteConcernError $writeConcernError = null,
+                array $writeErrors = [],
+            ) {
+                $this->insertedCount = $insertedCount;
+                $this->matchedCount = $matchedCount;
+                $this->modifiedCount = $modifiedCount;
+                $this->deletedCount = $deletedCount;
+                $this->upsertedCount = $upsertedCount;
+                $this->writeConcernError = $writeConcernError;
+                $this->writeErrors = $writeErrors;
+            }
+
+            public function getInsertedCount(): int { return $this->insertedCount; }
+            public function getMatchedCount(): int { return $this->matchedCount; }
+            public function getModifiedCount(): int { return $this->modifiedCount; }
+            public function getDeletedCount(): int { return $this->deletedCount; }
+            public function getUpsertedCount(): int { return $this->upsertedCount; }
+            public function getWriteConcernError(): ?WriteConcernError { return $this->writeConcernError; }
+            /** @return WriteError[] */
+            public function getWriteErrors(): array { return $this->writeErrors; }
+        }
+    }
+
+    if (! class_exists('MongoDB\Driver\WriteConcernError', false)) {
+        class WriteConcernError
+        {
+            public function __construct(
+                private string $message = '',
+                private int $code = 0,
+                private mixed $info = null,
+            ) {}
+
+            public function getMessage(): string { return $this->message; }
+            public function getCode(): int { return $this->code; }
+            public function getInfo(): mixed { return $this->info; }
+        }
+    }
+
+    if (! class_exists('MongoDB\Driver\WriteError', false)) {
+        class WriteError
+        {
+            public function __construct(
+                private int $index = 0,
+                private string $message = '',
+                private int $code = 0,
+            ) {}
+
+            public function getIndex(): int { return $this->index; }
+            public function getMessage(): string { return $this->message; }
+            public function getCode(): int { return $this->code; }
+        }
+    }
+
+    if (! class_exists('MongoDB\Driver\BulkWrite', false)) {
+        class BulkWrite implements \Countable
+        {
+            private bool $ordered;
+            /** @var array<int, array{type: string, args: array}> */
+            private array $operations = [];
+
+            public function __construct(array $options = [])
+            {
+                $this->ordered = $options['ordered'] ?? true;
+            }
+
+            public function insert(array|object $document): void
+            {
+                $this->operations[] = ['type' => 'insertOne', 'args' => [(array) $document]];
+            }
+
+            public function update(array|object $filter, array|object $update, array $options = []): void
+            {
+                $this->operations[] = ['type' => 'updateOne', 'args' => [(array) $filter, (array) $update, $options]];
+            }
+
+            public function delete(array|object $filter, array $options = []): void
+            {
+                $limit = $options['limit'] ?? 1;
+                $type = $limit === 0 ? 'deleteMany' : 'deleteOne';
+                $this->operations[] = ['type' => $type, 'args' => [(array) $filter, $options]];
+            }
+
+            /** @return array<int, array{type: string, args: array}> */
+            public function getOperations(): array { return $this->operations; }
+            public function isOrdered(): bool { return $this->ordered; }
+            public function count(): int { return count($this->operations); }
+        }
+    }
+
+    if (! class_exists('MongoDB\Driver\Manager', false)) {
+        class Manager
+        {
+            private \ZealPHP\MongoDB\Client $client;
+
+            public function __construct(?string $uri = 'mongodb://localhost:27017', ?array $uriOptions = [], ?array $driverOptions = [])
+            {
+                $this->client = new \ZealPHP\MongoDB\Client($uri, $uriOptions ?? [], $driverOptions ?? []);
+            }
+
+            public function executeBulkWrite(string $namespace, BulkWrite $bulk, ?WriteConcern $writeConcern = null): WriteResult
+            {
+                $parts = explode('.', $namespace, 2);
+                if (count($parts) !== 2) {
+                    throw new Exception\RuntimeException("Invalid namespace: {$namespace}");
+                }
+                [$dbName, $colName] = $parts;
+                $collection = $this->client->selectCollection($dbName, $colName);
+
+                $inserted = 0;
+                $matched = 0;
+                $modified = 0;
+                $deleted = 0;
+                $writeErrors = [];
+
+                foreach ($bulk->getOperations() as $i => $op) {
+                    try {
+                        match ($op['type']) {
+                            'insertOne' => (function () use ($collection, $op, &$inserted) {
+                                $collection->insertOne($op['args'][0]);
+                                $inserted++;
+                            })(),
+                            'updateOne' => (function () use ($collection, $op, &$matched, &$modified) {
+                                $r = $collection->updateOne($op['args'][0], $op['args'][1], $op['args'][2] ?? []);
+                                $matched += $r->getMatchedCount();
+                                $modified += $r->getModifiedCount();
+                            })(),
+                            'deleteOne' => (function () use ($collection, $op, &$deleted) {
+                                $r = $collection->deleteOne($op['args'][0], $op['args'][1] ?? []);
+                                $deleted += $r->getDeletedCount();
+                            })(),
+                            'deleteMany' => (function () use ($collection, $op, &$deleted) {
+                                $r = $collection->deleteMany($op['args'][0], $op['args'][1] ?? []);
+                                $deleted += $r->getDeletedCount();
+                            })(),
+                            default => null,
+                        };
+                    } catch (\Throwable $e) {
+                        $writeErrors[] = new WriteError($i, $e->getMessage(), (int) $e->getCode());
+                        if ($bulk->isOrdered()) {
+                            break;
+                        }
+                    }
+                }
+
+                return new WriteResult($inserted, $matched, $modified, $deleted, 0, null, $writeErrors);
+            }
+        }
+    }
 }
 
 namespace MongoDB\Driver\Exception {
@@ -556,7 +723,21 @@ namespace MongoDB\Driver\Exception {
     }
 
     if (! class_exists('MongoDB\Driver\Exception\BulkWriteException', false)) {
-        class BulkWriteException extends RuntimeException {}
+        class BulkWriteException extends RuntimeException
+        {
+            private ?\MongoDB\Driver\WriteResult $writeResult;
+
+            public function __construct(string $message = '', int $code = 0, ?\Throwable $previous = null, ?\MongoDB\Driver\WriteResult $writeResult = null)
+            {
+                parent::__construct($message, $code, $previous);
+                $this->writeResult = $writeResult;
+            }
+
+            public function getWriteResult(): \MongoDB\Driver\WriteResult
+            {
+                return $this->writeResult ?? new \MongoDB\Driver\WriteResult();
+            }
+        }
     }
 
     if (! class_exists('MongoDB\Driver\Exception\ConnectionException', false)) {
