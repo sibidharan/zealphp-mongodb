@@ -92,6 +92,7 @@ class Cursor implements Iterator
             $this->cursorId = null;
 
             $opts = $q['opts'] ?? [];
+
             return zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
         }
 
