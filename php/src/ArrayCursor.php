@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Iterator;
+use MongoDB\Model\BSONDocument;
 
 use function array_is_list;
 use function array_slice;
@@ -26,7 +27,7 @@ class ArrayCursor implements Iterator
         }
     }
 
-    public function current(): Document|array|null
+    public function current(): BSONDocument|Document|array|null
     {
         return $this->docs[$this->pos] ?? null;
     }

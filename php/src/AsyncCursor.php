@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Iterator;
+use MongoDB\Model\BSONDocument;
 
 use function array_shift;
 use function zealphp_mongodb_cursor_close;
@@ -12,7 +13,7 @@ use function zealphp_mongodb_cursor_next_batch_async;
 
 class AsyncCursor implements Iterator
 {
-    private Document|array|null $current = null;
+    private BSONDocument|Document|array|null $current = null;
     private int $key = -1;
     private bool $started = false;
     private const BATCH_SIZE = 100;
@@ -25,7 +26,7 @@ class AsyncCursor implements Iterator
     ) {
     }
 
-    public function current(): Document|array|null
+    public function current(): BSONDocument|Document|array|null
     {
         return $this->current;
     }

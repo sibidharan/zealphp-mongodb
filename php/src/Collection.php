@@ -63,7 +63,7 @@ class Collection
     ) {
     }
 
-    public function findOne(array|object $filter = [], array $options = []): Document|array|null
+    public function findOne(array|object $filter = [], array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
         $opts = $options ?: null;
@@ -157,7 +157,7 @@ class Collection
         return new Cursor($cursorId);
     }
 
-    public function findOneAndUpdate(array|object $filter, array|object $update, array $options = []): Document|array|null
+    public function findOneAndUpdate(array|object $filter, array|object $update, array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
@@ -168,7 +168,7 @@ class Collection
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
-    public function findOneAndDelete(array|object $filter, array $options = []): Document|array|null
+    public function findOneAndDelete(array|object $filter, array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
         $opts = null;
@@ -178,7 +178,7 @@ class Collection
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
-    public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): Document|array|null
+    public function findOneAndReplace(array|object $filter, array|object $replacement, array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
         $replacement = self::prepareBSON((array) $replacement);

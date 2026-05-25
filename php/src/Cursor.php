@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Iterator;
+use MongoDB\Model\BSONDocument;
 
 use function function_exists;
 use function is_array;
@@ -16,7 +17,7 @@ use function zealphp_mongodb_find_all;
 
 class Cursor implements Iterator
 {
-    private Document|array|null $current = null;
+    private BSONDocument|Document|array|null $current = null;
     private int $key                     = -1;
     private bool $started                = false;
     /** @var array{poolId: int, db: string, col: string, filter: array<string, mixed>, opts: array<string, mixed>|null}|null */
@@ -47,7 +48,7 @@ class Cursor implements Iterator
         $this->cursorId = zealphp_mongodb_find($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
     }
 
-    public function current(): Document|array|null
+    public function current(): BSONDocument|Document|array|null
     {
         return $this->current;
     }
