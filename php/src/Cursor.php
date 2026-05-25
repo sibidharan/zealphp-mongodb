@@ -90,7 +90,8 @@ class Cursor implements Iterator
             $this->started = true;
             $this->cursorId = null;
 
-            return zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts'] ?? []) ?: [];
+            $opts = $q['opts'] ?? [];
+            return zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
         }
 
         $this->ensureCursor();
