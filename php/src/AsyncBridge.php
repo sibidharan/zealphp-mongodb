@@ -67,21 +67,22 @@ class AsyncBridge
         array|null $updateOrPipeline,
     ): mixed {
         $opts = null;
+        $update = $updateOrPipeline ?? [];
 
         return match ($op) {
             'find_one' => zealphp_mongodb_find_one($poolId, $db, $col, $filterOrDoc, $opts),
             'find' => self::findSync($poolId, $db, $col, $filterOrDoc, $updateOrPipeline),
             'insert_one' => zealphp_mongodb_insert_one($poolId, $db, $col, $filterOrDoc, $opts),
-            'update_one' => zealphp_mongodb_update_one($poolId, $db, $col, $filterOrDoc, $updateOrPipeline ?? [], $opts),
-            'update_many' => zealphp_mongodb_update_many($poolId, $db, $col, $filterOrDoc, $updateOrPipeline ?? [], $opts),
+            'update_one' => zealphp_mongodb_update_one($poolId, $db, $col, $filterOrDoc, $update, $opts),
+            'update_many' => zealphp_mongodb_update_many($poolId, $db, $col, $filterOrDoc, $update, $opts),
             'delete_one' => zealphp_mongodb_delete_one($poolId, $db, $col, $filterOrDoc, $opts),
             'delete_many' => zealphp_mongodb_delete_many($poolId, $db, $col, $filterOrDoc, $opts),
-            'replace_one' => zealphp_mongodb_replace_one($poolId, $db, $col, $filterOrDoc, $updateOrPipeline ?? [], $opts),
+            'replace_one' => zealphp_mongodb_replace_one($poolId, $db, $col, $filterOrDoc, $update, $opts),
             'count_documents' => zealphp_mongodb_count_documents($poolId, $db, $col, $filterOrDoc, $opts),
             'distinct' => self::distinctSync($poolId, $db, $col, $filterOrDoc),
-            'find_one_and_update' => zealphp_mongodb_find_one_and_update($poolId, $db, $col, $filterOrDoc, $updateOrPipeline ?? [], $opts),
+            'find_one_and_update' => zealphp_mongodb_find_one_and_update($poolId, $db, $col, $filterOrDoc, $update, $opts),
             'find_one_and_delete' => zealphp_mongodb_find_one_and_delete($poolId, $db, $col, $filterOrDoc, $opts),
-            'find_one_and_replace' => zealphp_mongodb_find_one_and_replace($poolId, $db, $col, $filterOrDoc, $updateOrPipeline ?? [], $opts),
+            'find_one_and_replace' => zealphp_mongodb_find_one_and_replace($poolId, $db, $col, $filterOrDoc, $update, $opts),
             default => throw new Exception\RuntimeException("Unknown sync op: $op"),
         };
     }
