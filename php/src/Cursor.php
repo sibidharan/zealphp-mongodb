@@ -7,6 +7,7 @@ namespace ZealPHP\MongoDB;
 use Iterator;
 use MongoDB\Model\BSONDocument;
 
+use function array_map;
 use function function_exists;
 use function is_array;
 use function zealphp_mongodb_cursor_close;
