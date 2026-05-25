@@ -93,7 +93,12 @@ class Cursor implements Iterator
 
             $opts = $q['opts'] ?? [];
 
-            return zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
+            $raw = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
+
+            return array_map(
+                static fn ($doc) => is_array($doc) ? Collection::wrapDoc($doc) : $doc,
+                $raw,
+            );
         }
 
         $this->ensureCursor();
