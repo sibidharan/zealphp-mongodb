@@ -226,4 +226,95 @@ class CollectionTest extends TestCase
         $doc = $this->col->findOne(['name' => 'new']);
         $this->assertSame(2, $doc['v']);
     }
+
+    public function testDeleteOne(): void
+    {
+        $this->col->insertMany([['k' => 'a'], ['k' => 'a'], ['k' => 'b']]);
+        $result = $this->col->deleteOne(['k' => 'a']);
+        $this->assertSame(1, $result->getDeletedCount());
+        $this->assertSame(2, $this->col->countDocuments());
+    }
+
+    public function testUpdateMany(): void
+    {
+        $this->col->insertMany([['s' => 1], ['s' => 1], ['s' => 2]]);
+        $result = $this->col->updateMany(['s' => 1], ['$set' => ['s' => 10]]);
+        $this->assertSame(2, $result->getMatchedCount());
+        $this->assertSame(2, $result->getModifiedCount());
+    }
+
+    public function testFindOneAndDelete(): void
+    {
+        $this->col->insertOne(['name' => 'del', 'v' => 99]);
+        $doc = $this->col->findOneAndDelete(['name' => 'del']);
+        $this->assertNotNull($doc);
+        $this->assertSame(99, $doc['v']);
+        $this->assertNull($this->col->findOne(['name' => 'del']));
+    }
+
+    public function testFindOneAndReplace(): void
+    {
+        $this->col->insertOne(['name' => 'rep', 'v' => 1]);
+        $doc = $this->col->findOneAndReplace(
+            ['name' => 'rep'],
+            ['name' => 'replaced', 'v' => 2],
+            ['returnDocument' => 2],
+        );
+        $this->assertNotNull($doc);
+        $this->assertSame('replaced', $doc['name']);
+    }
+
+    public function testCreateIndexes(): void
+    {
+        $names = $this->col->createIndexes([
+            ['key' => ['f1' => 1]],
+            ['key' => ['f2' => -1]],
+        ]);
+        $this->assertCount(2, $names);
+    }
+
+    public function testDropIndexes(): void
+    {
+        $this->col->createIndex(['tmp1' => 1]);
+        $this->col->createIndex(['tmp2' => 1]);
+        $result = $this->col->dropIndexes();
+        $this->assertSame(1, $result['ok']);
+        $indexes = $this->col->listIndexes();
+        $this->assertCount(1, $indexes);
+    }
+
+    public function testFindToArray(): void
+    {
+        $this->col->insertMany([['n' => 1], ['n' => 2], ['n' => 3]]);
+        $docs = $this->col->find([])->toArray();
+        $this->assertCount(3, $docs);
+    }
+
+    public function testGetterMethods(): void
+    {
+        $this->assertIsString($this->col->getCollectionName());
+        $this->assertIsString($this->col->getDatabaseName());
+        $this->assertStringContainsString('.', $this->col->getNamespace());
+    }
+
+    public function testBulkWriteWithReplaceAndDeleteMany(): void
+    {
+        $this->col->insertMany([['t' => 1], ['t' => 1], ['t' => 2]]);
+        $result = $this->col->bulkWrite([
+            ['replaceOne' => [['t' => 2], ['t' => 20]]],
+            ['deleteMany' => [['t' => 1]]],
+        ]);
+        $this->assertSame(2, $result->getDeletedCount());
+        $this->assertSame(1, $result->getMatchedCount());
+    }
+
+    public function testBulkWriteWithUpdateMany(): void
+    {
+        $this->col->insertMany([['u' => 1], ['u' => 1]]);
+        $result = $this->col->bulkWrite([
+            ['updateMany' => [['u' => 1], ['$set' => ['u' => 99]]]],
+        ]);
+        $this->assertSame(2, $result->getMatchedCount());
+        $this->assertSame(2, $result->getModifiedCount());
+    }
 }

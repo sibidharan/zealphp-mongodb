@@ -24,5 +24,10 @@
         <include>
             <directory>php/src</directory>
         </include>
+        <exclude>
+            <file>php/src/compat/bson_polyfill.php</file>
+            <file>php/src/AsyncBridge.php</file>
+            <file>php/src/AsyncCursor.php</file>
+        </exclude>
     </source>
 </phpunit>

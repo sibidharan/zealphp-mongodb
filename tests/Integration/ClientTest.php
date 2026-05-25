@@ -16,6 +16,7 @@ use ZealPHP\MongoDB\WriteConcern;
 
 use function extension_loaded;
 use function getenv;
+use function uniqid;
 
 class ClientTest extends TestCase
 {
@@ -82,5 +83,42 @@ class ClientTest extends TestCase
         $this->assertInstanceOf(WriteConcern::class, self::$client->getWriteConcern());
         $this->assertInstanceOf(ReadPreference::class, self::$client->getReadPreference());
         $this->assertIsArray(self::$client->getTypeMap());
+    }
+
+    public function testToString(): void
+    {
+        $this->assertSame('mongodb://...', (string) self::$client);
+    }
+
+    public function testGetPoolId(): void
+    {
+        $this->assertIsInt(self::$client->getPoolId());
+    }
+
+    public function testDebugInfo(): void
+    {
+        $info = self::$client->__debugInfo();
+        $this->assertArrayHasKey('poolId', $info);
+    }
+
+    public function testGetDatabaseAlias(): void
+    {
+        $db = self::$client->getDatabase('test');
+        $this->assertInstanceOf(Database::class, $db);
+    }
+
+    public function testGetCollectionAlias(): void
+    {
+        $col = self::$client->getCollection('test', 'foo');
+        $this->assertInstanceOf(Collection::class, $col);
+    }
+
+    public function testDropDatabase(): void
+    {
+        $dbName = 'zealphp_drop_test_' . uniqid();
+        $db = self::$client->selectDatabase($dbName);
+        $db->selectCollection('tmp')->insertOne(['x' => 1]);
+        $result = self::$client->dropDatabase($dbName);
+        $this->assertSame(1, $result['ok']);
     }
 }

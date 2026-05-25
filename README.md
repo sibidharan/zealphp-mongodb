@@ -3,6 +3,7 @@
 [![Tests](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/tests.yml/badge.svg)](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/tests.yml)
 [![Coding Standards](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/coding-standards.yml/badge.svg)](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/coding-standards.yml)
 [![Static Analysis](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/sibidharan/zealphp-mongodb/actions/workflows/static-analysis.yml)
+[![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)](https://github.com/sibidharan/zealphp-mongodb)
 
 Async MongoDB driver for PHP — a Rust extension bridging the official [mongo-rust-driver](https://github.com/mongodb/mongo-rust-driver) into PHP via [ext-php-rs](https://github.com/davidcole1340/ext-php-rs), with non-blocking coroutine support through [OpenSwoole](https://openswoole.com/).
 

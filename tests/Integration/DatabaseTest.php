@@ -6,11 +6,15 @@ namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
 use Throwable;
+use ZealPHP\MongoDB\ArrayCursor;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
 use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\GridFS\Bucket;
+use ZealPHP\MongoDB\ReadConcern;
+use ZealPHP\MongoDB\ReadPreference;
+use ZealPHP\MongoDB\WriteConcern;
 
 use function extension_loaded;
 use function getenv;
@@ -88,5 +92,54 @@ class DatabaseTest extends TestCase
         $new = $this->db->withOptions(['readConcern' => 'local']);
         $this->assertInstanceOf(Database::class, $new);
         $this->assertNotSame($this->db, $new);
+    }
+
+    public function testListCollections(): void
+    {
+        $this->db->createCollection('list_test');
+        $result = $this->db->listCollections();
+        $this->assertIsArray($result);
+        $this->assertNotEmpty($result);
+    }
+
+    public function testDatabaseAggregate(): void
+    {
+        $col = $this->db->selectCollection('agg_test');
+        $col->insertMany([['v' => 1], ['v' => 2], ['v' => 3]]);
+        $cursor = $this->db->aggregate([
+            ['$documents' => [['x' => 1], ['x' => 2]]],
+        ]);
+        $this->assertInstanceOf(ArrayCursor::class, $cursor);
+    }
+
+    public function testRenameCollection(): void
+    {
+        $this->db->createCollection('rename_src');
+        $col = $this->db->selectCollection('rename_src');
+        $col->insertOne(['x' => 1]);
+        $this->db->renameCollection('rename_src', 'rename_dst');
+        $names = $this->db->listCollectionNames();
+        $this->assertContains('rename_dst', $names);
+        $this->assertNotContains('rename_src', $names);
+    }
+
+    public function testGetPoolId(): void
+    {
+        $this->assertIsInt($this->db->getPoolId());
+    }
+
+    public function testDebugInfo(): void
+    {
+        $info = $this->db->__debugInfo();
+        $this->assertArrayHasKey('databaseName', $info);
+        $this->assertArrayHasKey('poolId', $info);
+    }
+
+    public function testConcernGetters(): void
+    {
+        $this->assertInstanceOf(ReadConcern::class, $this->db->getReadConcern());
+        $this->assertInstanceOf(WriteConcern::class, $this->db->getWriteConcern());
+        $this->assertInstanceOf(ReadPreference::class, $this->db->getReadPreference());
+        $this->assertIsArray($this->db->getTypeMap());
     }
 }

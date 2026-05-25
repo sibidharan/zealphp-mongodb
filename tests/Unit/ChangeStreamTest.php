@@ -23,4 +23,35 @@ class ChangeStreamTest extends TestCase
         $cs = new ChangeStream();
         $this->assertInstanceOf(Iterator::class, $cs);
     }
+
+    public function testKeyReturnsNull(): void
+    {
+        $cs = new ChangeStream();
+        $this->assertNull($cs->key());
+    }
+
+    public function testNextDoesNotError(): void
+    {
+        $cs = new ChangeStream();
+        $cs->next();
+        $this->assertFalse($cs->valid());
+    }
+
+    public function testRewindDoesNotError(): void
+    {
+        $cs = new ChangeStream();
+        $cs->rewind();
+        $this->assertFalse($cs->valid());
+    }
+
+    public function testForeachProducesNoResults(): void
+    {
+        $cs = new ChangeStream();
+        $results = [];
+        foreach ($cs as $item) {
+            $results[] = $item;
+        }
+
+        $this->assertEmpty($results);
+    }
 }
