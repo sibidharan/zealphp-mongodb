@@ -7,7 +7,6 @@ namespace ZealPHP\MongoDB;
 use Iterator;
 use MongoDB\Model\BSONDocument;
 
-use function array_is_list;
 use function array_slice;
 use function is_array;
 use function usort;
@@ -18,12 +17,29 @@ class ArrayCursor implements Iterator
 
     public function __construct(private array $docs)
     {
+        // Top-level cursor positions are always documents under official
+        // ext-mongodb (BSONDocument with ARRAY_AS_PROPS). Match that contract
+        // here so consumers can use object access (`$doc->field = 'x'`)
+        // without per-call defensive coerces, AND so empty docs (`[]` —
+        // for which `array_is_list` returns true in PHP 8.1+) don't slip
+        // through as bare arrays that crash on property assignment.
+        //
+        // We can't delegate to Collection::wrapDoc() at the top level — its
+        // list-detection branch would wrap `[]` as a BSONArray, which
+        // *silently drops* property writes (ARRAY_AS_PROPS on a list-backed
+        // ArrayObject) — strictly worse than a crash. Inline the document
+        // wrap; reuse wrapDoc() for nested values.
         foreach ($this->docs as $i => $doc) {
-            if (! is_array($doc) || array_is_list($doc)) {
+            if (! is_array($doc)) {
                 continue;
             }
 
-            $this->docs[$i] = Collection::wrapDoc($doc);
+            $wrapped = new BSONDocument();
+            foreach ($doc as $key => $value) {
+                $wrapped[$key] = is_array($value) ? Collection::wrapDoc($value) : $value;
+            }
+
+            $this->docs[$i] = $wrapped;
         }
     }
 
