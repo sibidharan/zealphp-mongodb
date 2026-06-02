@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB\Tests\Unit;
 
 use ArrayAccess;
 use Iterator;
+use MongoDB\Model\BSONDocument;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\ArrayCursor;
 use ZealPHP\MongoDB\Document;
@@ -207,15 +208,54 @@ class ArrayCursorTest extends TestCase
         $this->assertSame(30, $doc['age']);
     }
 
-    public function testConstructorPassesThroughListArraysUnchanged(): void
+    public function testConstructorWrapsListShapedDocAsBSONDocument(): void
     {
+        // MongoDB documents at the top of a cursor are always documents (not
+        // arrays) under ext-mongodb. Even if upstream returned something that
+        // PHP's `array_is_list` calls a list (e.g. a numeric-keyed value bag),
+        // the cursor surface must hand back a BSONDocument so consumers using
+        // object-style access (`$doc->field = ...`) don't crash. Empty docs
+        // are the most common real-world trigger — `array_is_list([])` is
+        // true in PHP 8.1+.
         $listArray = [1, 2, 3];
         $cursor    = new ArrayCursor([$listArray]);
 
         $doc = $cursor->current();
-        // A list array is not an associative array, so it passes through without wrapping
-        $this->assertIsArray($doc);
-        $this->assertSame([1, 2, 3], $doc);
+        $this->assertInstanceOf(BSONDocument::class, $doc);
+        $this->assertFalse(is_array($doc), 'List-shaped docs must be wrapped, not passed through');
+        $this->assertSame(1, $doc[0]);
+        $this->assertSame(3, $doc[2]);
+    }
+
+    public function testConstructorWrapsEmptyDocAsBSONDocument(): void
+    {
+        // Regression for empty-doc parity: under ext-mongodb an empty Mongo
+        // document is a BSONDocument that survives `$doc->field = X` without
+        // a TypeError. The previous `array_is_list($doc)` short-circuit
+        // skipped wrap for `[]` because `array_is_list([])` is true,
+        // surfacing a plain array on which property writes crash.
+        // See sibidharan/zealphp-mongodb#1.
+        $cursor = new ArrayCursor([[]]);
+
+        $doc = $cursor->current();
+        $msg = 'Empty cursor docs must wrap as BSONDocument (matches ext-mongodb)';
+        $this->assertInstanceOf(BSONDocument::class, $doc, $msg);
+        $this->assertFalse(is_array($doc));
+    }
+
+    public function testEmptyDocAcceptsPropertyAssignment(): void
+    {
+        // The user-visible reproduction of sibidharan/zealphp-mongodb#1.
+        // Under ext-mongodb this never throws; under zealphp-mongodb prior
+        // to this fix it surfaced as: "TypeError: Attempt to assign property
+        // 'computed_status' on array".
+        $cursor = new ArrayCursor([[]]);
+        $doc    = $cursor->current();
+
+        $doc->computed_status = 'live';
+
+        $this->assertSame('live', $doc->computed_status);
+        $this->assertSame('live', $doc['computed_status']);
     }
 
     public function testConstructorPassesThroughNonArrayValues(): void
