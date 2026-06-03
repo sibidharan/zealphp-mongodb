@@ -875,6 +875,13 @@ pub fn zealphp_mongodb_list_collection_names(pool_id: i64, db: &str) -> PhpResul
 
 // --- CENTRALIZED ASYNC API ---
 
+// fix(by-ref): change update_or_pipeline from Option<&Zval> to &Zval to avoid
+// the ext-php-rs-derive macro bug at function.rs:312-317 (v0.10.2) which
+// unconditionally marks Option<&T> as PHP pass-by-reference (the comment at
+// line 299 said it only meant Option<&mut T>). Plain &Zval is NOT marked
+// by-ref by the same macro. Callers must now always pass arg #6 — pass `null`
+// when not applicable. AsyncBridge already does this, and the labs
+// DashboardPrefetcher passes 6 args at every call site.
 #[php_function]
 pub fn zealphp_mongodb_exec_async(
     pool_id: i64,
@@ -882,7 +889,7 @@ pub fn zealphp_mongodb_exec_async(
     col: &str,
     op: &str,
     filter_or_doc: &Zval,
-    update_or_pipeline: Option<&Zval>,
+    update_or_pipeline: &Zval,
 ) -> PhpResult<Zval> {
     let client = pool::get_async_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = if !filter_or_doc.is_null() {
@@ -890,15 +897,14 @@ pub fn zealphp_mongodb_exec_async(
     } else {
         None
     };
-    let update_docs = match update_or_pipeline {
-        Some(z) if !z.is_null() => {
-            if op == "aggregate" || op == "aggregate_cursor" {
-                Some(bson_convert::php_to_pipeline(z).map_err(|e| PhpException::default(e))?)
-            } else {
-                Some(vec![bson_convert::php_to_doc(z).map_err(|e| PhpException::default(e))?])
-            }
+    let update_docs = if !update_or_pipeline.is_null() {
+        if op == "aggregate" || op == "aggregate_cursor" {
+            Some(bson_convert::php_to_pipeline(update_or_pipeline).map_err(|e| PhpException::default(e))?)
+        } else {
+            Some(vec![bson_convert::php_to_doc(update_or_pipeline).map_err(|e| PhpException::default(e))?])
         }
-        _ => None,
+    } else {
+        None
     };
 
     let task_id = async_store::new_task_id();
