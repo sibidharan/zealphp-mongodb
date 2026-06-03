@@ -37,12 +37,12 @@ final class ExecAsyncByRefTest extends TestCase
         // arg #6 update_or_pipeline — the fix: literal arrays/pipelines must pass.
         self::assertFalse(
             $params[5]->isPassedByReference(),
-            'update_or_pipeline (arg #6) must NOT be by-reference so literal pipelines pass'
+            'update_or_pipeline (arg #6) must NOT be by-reference so literal pipelines pass',
         );
         // arg #5 filter_or_doc — bare &Zval, never by-ref; guard against regression.
         self::assertFalse(
             $params[4]->isPassedByReference(),
-            'filter_or_doc (arg #5) must NOT be by-reference'
+            'filter_or_doc (arg #5) must NOT be by-reference',
         );
     }
 }
