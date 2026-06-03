@@ -45,7 +45,7 @@ namespace {
     function zealphp_mongodb_cursor_to_array(int $cursorId): array {}
     function zealphp_mongodb_cursor_next_batch_async(int $cursorId, int $batchSize): array {}
 
-    function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline = null): array {}
+    function zealphp_mongodb_exec_async(int $poolId, string $dbName, string $colName, string $op, array $filterOrDoc, ?array $updateOrPipeline): array {}
     function zealphp_mongodb_async_result(int $taskId): mixed {}
     function zealphp_mongodb_batch_result(int $taskId): array {}
     function zealphp_mongodb_close_efd(int $efd): void {}
