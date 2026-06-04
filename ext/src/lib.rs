@@ -984,6 +984,31 @@ pub fn zealphp_mongodb_close_efd(fd: i64) -> PhpResult<()> {
     Ok(())
 }
 
+/// Return [pending_async_results, pending_batch_results].
+///
+/// In a healthy app where every `zealphp_mongodb_exec_async()` call is paired
+/// with `zealphp_mongodb_async_result()`, both numbers stay near zero. A
+/// monotonically growing count indicates a leak: the caller is spawning tasks
+/// and discarding their task_id without ever draining the result.
+///
+/// Stored results auto-expire after `ZEALPHP_MONGODB_RESULT_TTL_SECS` (default
+/// 60 s) — this counter shows the *current* in-window pending count. Useful for
+/// dashboards / Prometheus exporters.
+#[php_function]
+pub fn zealphp_mongodb_pending_results() -> PhpResult<Zval> {
+    let (results, batches) = async_store::pending_count();
+    let mut zval = Zval::new();
+    let mut ht = ZendHashTable::new();
+    let mut r = Zval::new();
+    r.set_long(results as i64);
+    let _ = ht.insert("results", r);
+    let mut b = Zval::new();
+    b.set_long(batches as i64);
+    let _ = ht.insert("batches", b);
+    zval.set_hashtable(ht);
+    Ok(zval)
+}
+
 // --- Helper functions ---
 
 fn update_result_to_zval(result: &mongodb::results::UpdateResult) -> Zval {
