@@ -15,14 +15,30 @@ namespace MongoDB\BSON {
     if (! interface_exists('MongoDB\BSON\Serializable', false)) {
         interface Serializable extends Type
         {
-            public function bsonSerialize(): array|\stdClass;
+            /**
+             * No return type ON THE INTERFACE by design: mongodb/mongodb 1.x
+             * implements this untyped (#[ReturnTypeWillChange]) while 2.x
+             * declares `array|stdClass`. A typed interface method makes the
+             * 1.x implementation FATALLY incompatible at class-link time
+             * (widening); leaving the interface untyped lets both majors
+             * link (tightening in the class is legal covariance).
+             *
+             * @return array|\stdClass
+             */
+            public function bsonSerialize();
         }
     }
 
     if (! interface_exists('MongoDB\BSON\Unserializable', false)) {
         interface Unserializable
         {
-            public function bsonUnserialize(array $data): void;
+            /**
+             * Untyped return for the same mongodb/mongodb 1.x-vs-2.x
+             * compatibility reason as Serializable::bsonSerialize() above.
+             *
+             * @return void
+             */
+            public function bsonUnserialize(array $data);
         }
     }
 
