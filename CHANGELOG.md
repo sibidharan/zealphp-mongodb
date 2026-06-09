@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-06-10
+
+### Fixed
+- **BSON polyfill link-compatibility with `mongodb/mongodb` 1.x** — the polyfill's `MongoDB\BSON\Serializable`/`Unserializable` interface methods declared typed returns; the 1.x library implements them untyped (`#[ReturnTypeWillChange]`), making every Model class a worker-killing `E_COMPILE_ERROR` on first autoload — i.e. on the **first query returning a real document** (root cause of ext-zealphp#36, the wgvpn "password_verify hang"). Interface methods are now untyped; both 1.x (untyped) and 2.x (typed) implementations link. Pinned by `PolyfillLinkCompatTest`.
+
+### Changed
+- **Session transactions and `Client::watch()` now FAIL LOUD** — `startTransaction`/`commitTransaction`/`abortTransaction` previously flipped a local state string while every operation ran **non-transactionally** (fake ACID); `watch()` returned an empty `ChangeStream` that never delivered events. All four now throw `Exception\RuntimeException('… not yet supported …')` like GridFS, until the real implementations land in v0.4.0. If your code calls these, it was silently broken before — now it tells you.
+
+
 ## [0.1.1] - 2026-05-19
 
 ### Added

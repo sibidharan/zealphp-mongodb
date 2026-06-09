@@ -21,19 +21,36 @@ class Session
     {
     }
 
+    /**
+     * @throws Exception\RuntimeException Transactions are not yet wired to the
+     * server. Failing loud is deliberate: silently pretending to start a
+     * transaction (the pre-v0.3.1 behaviour) let every op run
+     * non-transactionally while the caller believed it had ACID semantics —
+     * the worst possible silent failure for a database driver.
+     */
     public function startTransaction(array|null $options = null): void
     {
-        $this->transactionState = self::TRANSACTION_IN_PROGRESS;
+        throw new Exception\RuntimeException(
+            'MongoDB transactions are not yet supported by zealphp-mongodb '
+            . '(real ClientSession transactions land in v0.4.0). '
+            . 'Refusing to fake it: operations would run NON-transactionally.',
+        );
     }
 
+    /** @throws Exception\RuntimeException See startTransaction(). */
     public function commitTransaction(): void
     {
-        $this->transactionState = self::TRANSACTION_COMMITTED;
+        throw new Exception\RuntimeException(
+            'MongoDB transactions are not yet supported by zealphp-mongodb (see startTransaction()).',
+        );
     }
 
+    /** @throws Exception\RuntimeException See startTransaction(). */
     public function abortTransaction(): void
     {
-        $this->transactionState = self::TRANSACTION_ABORTED;
+        throw new Exception\RuntimeException(
+            'MongoDB transactions are not yet supported by zealphp-mongodb (see startTransaction()).',
+        );
     }
 
     public function endSession(): void

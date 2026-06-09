@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use ZealPHP\MongoDB\ChangeStream;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
+use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\ReadConcern;
 use ZealPHP\MongoDB\ReadPreference;
 use ZealPHP\MongoDB\Session;
@@ -70,11 +70,14 @@ class ClientTest extends TestCase
         $this->assertInstanceOf(Session::class, $session);
     }
 
-    public function testWatch(): void
+    public function testWatchFailsLoud(): void
     {
-        $cs = self::$client->watch();
-        $this->assertInstanceOf(ChangeStream::class, $cs);
-        $this->assertFalse($cs->valid());
+        // The pre-v0.3.1 stub returned an empty ChangeStream that silently
+        // never delivered events; until the real change-stream lands, watch()
+        // refuses loudly.
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('not yet supported');
+        self::$client->watch();
     }
 
     public function testConcernGetters(): void

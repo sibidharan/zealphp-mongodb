@@ -5,33 +5,44 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\Session;
 
 class SessionTest extends TestCase
 {
-    public function testTransactionLifecycle(): void
+    public function testFreshSessionIsNotInTransaction(): void
     {
         $s = new Session(0);
         $this->assertSame(Session::TRANSACTION_NONE, $s->getTransactionState());
         $this->assertFalse($s->isInTransaction());
-
-        $s->startTransaction();
-        $this->assertSame(Session::TRANSACTION_IN_PROGRESS, $s->getTransactionState());
-        $this->assertTrue($s->isInTransaction());
-
-        $s->commitTransaction();
-        $this->assertSame(Session::TRANSACTION_COMMITTED, $s->getTransactionState());
-
-        $s->endSession();
-        $this->assertSame(Session::TRANSACTION_NONE, $s->getTransactionState());
     }
 
-    public function testAbortTransaction(): void
+    /**
+     * Transactions FAIL LOUD until the real ClientSession implementation
+     * lands: the previous stub silently flipped a local state string while
+     * every operation ran NON-transactionally — fake ACID, the worst silent
+     * failure a database driver can have.
+     */
+    public function testStartTransactionFailsLoud(): void
     {
         $s = new Session(0);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('not yet supported');
         $s->startTransaction();
+    }
+
+    public function testCommitTransactionFailsLoud(): void
+    {
+        $s = new Session(0);
+        $this->expectException(RuntimeException::class);
+        $s->commitTransaction();
+    }
+
+    public function testAbortTransactionFailsLoud(): void
+    {
+        $s = new Session(0);
+        $this->expectException(RuntimeException::class);
         $s->abortTransaction();
-        $this->assertSame(Session::TRANSACTION_ABORTED, $s->getTransactionState());
     }
 
     public function testLogicalSessionId(): void

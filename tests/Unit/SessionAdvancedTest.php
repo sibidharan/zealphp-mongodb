@@ -17,13 +17,6 @@ class SessionAdvancedTest extends TestCase
         $this->assertNull($s->getTransactionOptions());
     }
 
-    public function testGetTransactionOptionsNullDuringTransaction(): void
-    {
-        $s = new Session(0);
-        $s->startTransaction();
-        $this->assertNull($s->getTransactionOptions());
-    }
-
     public function testGetClusterTimeReturnsNull(): void
     {
         $s = new Session(0);
@@ -45,14 +38,6 @@ class SessionAdvancedTest extends TestCase
     public function testIsDirtyReturnsFalse(): void
     {
         $s = new Session(0);
-        $this->assertFalse($s->isDirty());
-    }
-
-    public function testIsDirtyFalseAfterTransaction(): void
-    {
-        $s = new Session(0);
-        $s->startTransaction();
-        $s->commitTransaction();
         $this->assertFalse($s->isDirty());
     }
 
