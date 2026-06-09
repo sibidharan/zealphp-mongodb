@@ -6,6 +6,18 @@ namespace ZealPHP\MongoDB\Tests\Unit\BSON;
 
 use PHPUnit\Framework\TestCase;
 
+use function escapeshellarg;
+use function exec;
+use function file_put_contents;
+use function implode;
+use function sprintf;
+use function sys_get_temp_dir;
+use function tempnam;
+use function unlink;
+use function var_export;
+
+use const PHP_BINARY;
+
 /**
  * Pins the polyfill ↔ mongodb/mongodb link-compatibility contract (issue: the
  * wgvpn "password_verify hang", ext-zealphp#36 — actually a worker-killing
@@ -37,7 +49,7 @@ final class PolyfillLinkCompatTest extends TestCase
         $script = sprintf(
             '<?php %s%s echo "LINKED";',
             $loadPolyfill ? sprintf('require %s; ', var_export(self::POLYFILL, true)) : '',
-            $code
+            $code,
         );
         $tmp = tempnam(sys_get_temp_dir(), 'polyfill_probe_');
         file_put_contents($tmp, $script);
@@ -89,7 +101,7 @@ final class PolyfillLinkCompatTest extends TestCase
         $autoload = __DIR__ . '/../../../vendor/autoload.php';
         $r = $this->compileProbe(sprintf(
             'require %s; $d = new MongoDB\Model\BSONDocument(["a" => 1]); $l = new MongoDB\Model\BSONArray([1]); ',
-            var_export($autoload, true)
+            var_export($autoload, true),
         ), loadPolyfill: false);
         $this->assertSame(0, $r['exit'], "Installed mongodb/mongodb model classes must link; got: {$r['out']}");
         $this->assertStringContainsString('LINKED', $r['out']);
