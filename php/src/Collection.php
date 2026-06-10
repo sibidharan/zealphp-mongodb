@@ -28,6 +28,7 @@ use function hexdec;
 use function is_array;
 use function is_object;
 use function zealphp_mongodb_aggregate;
+use function zealphp_mongodb_aggregate_all;
 use function zealphp_mongodb_batch_result;
 use function zealphp_mongodb_close_efd;
 use function zealphp_mongodb_count_documents;
@@ -39,6 +40,7 @@ use function zealphp_mongodb_drop_collection;
 use function zealphp_mongodb_drop_index;
 use function zealphp_mongodb_drop_indexes;
 use function zealphp_mongodb_estimated_document_count;
+use function zealphp_mongodb_find_all;
 use function zealphp_mongodb_find_one;
 use function zealphp_mongodb_find_one_and_delete;
 use function zealphp_mongodb_find_one_and_replace;
@@ -63,20 +65,46 @@ class Collection
     ) {
     }
 
+    /**
+     * Map public options to the ext-level opts array. The `session` option
+     * (a Session instance, as in mongodb/mongodb) becomes the internal
+     * `__session` registry id the Rust ext threads through the server
+     * round-trip — required for transactions.
+     */
+    private static function mapOptions(array $options): array|null
+    {
+        if (($options['session'] ?? null) instanceof Session) {
+            $options['__session'] = $options['session']->getSessionId();
+        }
+
+        unset($options['session']);
+
+        return $options ?: null;
+    }
+
     public function findOne(array|object $filter = [], array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
 
-    public function find(array|object $filter = [], array $options = []): Cursor
+    public function find(array|object $filter = [], array $options = []): Cursor|ArrayCursor
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
+
+        if (is_array($opts) && isset($opts['__session'])) {
+            // Session reads (transactions) collect eagerly — the driver-side
+            // SessionCursor needs the same session borrowed per batch, so the
+            // ext drains it inside one call. Bounded by the txn snapshot.
+            $docs = zealphp_mongodb_find_all($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+
+            return new ArrayCursor($docs);
+        }
 
         return Cursor::deferred($this->poolId, $this->dbName, $this->colName, $filter, $opts);
     }
@@ -84,7 +112,7 @@ class Collection
     public function insertOne(array|object $document, array $options = []): InsertOneResult
     {
         $document = self::prepareBSON((array) $document);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         return new InsertOneResult(zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts));
     }
@@ -93,7 +121,7 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         return new UpdateResult(zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
@@ -102,7 +130,7 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         return new UpdateResult(zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
     }
@@ -110,7 +138,7 @@ class Collection
     public function deleteOne(array|object $filter, array $options = []): DeleteResult
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         return new DeleteResult(zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
@@ -118,7 +146,7 @@ class Collection
     public function deleteMany(array|object $filter, array $options = []): DeleteResult
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         return new DeleteResult(zealphp_mongodb_delete_many($this->poolId, $this->dbName, $this->colName, $filter, $opts));
     }
@@ -127,7 +155,7 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $replacement = self::prepareBSON((array) $replacement);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         return new UpdateResult(zealphp_mongodb_replace_one($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
     }
@@ -135,7 +163,7 @@ class Collection
     public function countDocuments(array|object $filter = [], array $options = []): int
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         return zealphp_mongodb_count_documents($this->poolId, $this->dbName, $this->colName, $filter, $opts);
     }
@@ -143,15 +171,22 @@ class Collection
     public function distinct(string $fieldName, array|object $filter = [], array $options = []): array
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         return zealphp_mongodb_distinct($this->poolId, $this->dbName, $this->colName, $fieldName, $filter, $opts);
     }
 
-    public function aggregate(array $pipeline, array $options = []): Cursor
+    public function aggregate(array $pipeline, array $options = []): Cursor|ArrayCursor
     {
         $pipeline = self::prepareBSON($pipeline);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
+
+        if (is_array($opts) && isset($opts['__session'])) {
+            $docs = zealphp_mongodb_aggregate_all($this->poolId, $this->dbName, $this->colName, $pipeline, $opts);
+
+            return new ArrayCursor($docs);
+        }
+
         $cursorId = zealphp_mongodb_aggregate($this->poolId, $this->dbName, $this->colName, $pipeline, $opts);
 
         return new Cursor($cursorId);
@@ -161,7 +196,7 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $update = self::prepareBSON((array) $update);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
 
@@ -171,7 +206,7 @@ class Collection
     public function findOneAndDelete(array|object $filter, array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
-        $opts = null;
+        $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
 
@@ -182,7 +217,7 @@ class Collection
     {
         $filter = self::prepareBSON((array) $filter);
         $replacement = self::prepareBSON((array) $replacement);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
 
@@ -192,7 +227,7 @@ class Collection
     public function createIndex(array|object $key, array $options = []): string
     {
         $key = self::prepareBSON((array) $key);
-        $opts = $options ?: null;
+        $opts = $options ?: null; // index options — no session threading
 
         return zealphp_mongodb_create_index($this->poolId, $this->dbName, $this->colName, $key, $opts);
     }
@@ -200,7 +235,7 @@ class Collection
     public function insertMany(array $documents, array $options = []): InsertManyResult
     {
         $docs = array_map(static fn ($d) => self::prepareBSON((array) $d), $documents);
-        $opts = $options ?: null;
+        $opts = self::mapOptions($options);
 
         return new InsertManyResult(zealphp_mongodb_insert_many($this->poolId, $this->dbName, $this->colName, $docs, $opts));
     }
@@ -315,6 +350,12 @@ class Collection
     public function count(array|object $filter = [], array $options = []): int
     {
         return $this->countDocuments($filter, $options);
+    }
+
+    /** Watch this collection for changes (replica set required). */
+    public function watch(array $pipeline = [], array $options = []): ChangeStream
+    {
+        return ChangeStream::open($this->poolId, $this->dbName, $this->colName, $pipeline, $options);
     }
 
     public function getCollectionName(): string

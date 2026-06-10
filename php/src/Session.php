@@ -4,9 +4,40 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
-use function bin2hex;
-use function random_bytes;
+use function function_exists;
+use function zealphp_mongodb_session_abort_transaction;
+use function zealphp_mongodb_session_cluster_time;
+use function zealphp_mongodb_session_commit_transaction;
+use function zealphp_mongodb_session_end;
+use function zealphp_mongodb_session_lsid;
+use function zealphp_mongodb_session_operation_time;
+use function zealphp_mongodb_session_start;
+use function zealphp_mongodb_session_start_transaction;
 
+/**
+ * Server-backed client session — real `ClientSession` in the Rust driver,
+ * matching ext-mongodb's MongoDB\Driver\Session semantics. Pass it to
+ * collection operations via the `['session' => $session]` option; in a
+ * transaction every such op rides the same server transaction.
+ *
+ * ```php
+ * $session = $client->startSession();
+ * $session->startTransaction();
+ * try {
+ *     $col->insertOne(['x' => 1], ['session' => $session]);
+ *     $col->updateOne(['y' => 2], ['$set' => ['z' => 3]], ['session' => $session]);
+ *     $session->commitTransaction();
+ * } catch (\Throwable $e) {
+ *     $session->abortTransaction();
+ *     throw $e;
+ * } finally {
+ *     $session->endSession();
+ * }
+ * ```
+ *
+ * Transactions require a replica set or sharded cluster (MongoDB server
+ * requirement — same as the C driver).
+ */
 class Session
 {
     public const TRANSACTION_NONE = 'none';
@@ -17,44 +48,65 @@ class Session
 
     private string $transactionState = self::TRANSACTION_NONE;
 
+    private readonly int $sessionId;
+
+    private bool $ended = false;
+
     public function __construct(private readonly int $poolId, private readonly array $options = [])
     {
+        if (! function_exists('zealphp_mongodb_session_start')) {
+            throw new Exception\RuntimeException(
+                'Sessions require zealphp_mongodb.so >= 0.3.2 (zealphp_mongodb_session_start missing).',
+            );
+        }
+
+        // Assign to a local first — ext-php-rs marks Option<&Zval> args
+        // by-ref-nullable, and PHP refuses to pass an EXPRESSION by
+        // reference (the issue-#3 quirk; every Collection op does the same).
+        $opts = $options ?: null;
+        $this->sessionId = zealphp_mongodb_session_start($this->poolId, $opts);
+    }
+
+    /** Internal — the ext-side session registry handle, threaded through ops. */
+    public function getSessionId(): int
+    {
+        return $this->sessionId;
     }
 
     /**
-     * @throws Exception\RuntimeException Transactions are not yet wired to the
-     * server. Failing loud is deliberate: silently pretending to start a
-     * transaction (the pre-v0.3.1 behaviour) let every op run
-     * non-transactionally while the caller believed it had ACID semantics —
-     * the worst possible silent failure for a database driver.
+     * Start a server transaction on this session. State errors (already in
+     * transaction, …) surface as the driver's own exceptions — same contract
+     * as ext-mongodb.
      */
     public function startTransaction(array|null $options = null): void
     {
-        throw new Exception\RuntimeException(
-            'MongoDB transactions are not yet supported by zealphp-mongodb '
-            . '(real ClientSession transactions land in v0.4.0). '
-            . 'Refusing to fake it: operations would run NON-transactionally.',
-        );
+        $this->assertNotEnded();
+        zealphp_mongodb_session_start_transaction($this->sessionId, $options);
+        $this->transactionState = self::TRANSACTION_IN_PROGRESS;
     }
 
-    /** @throws Exception\RuntimeException See startTransaction(). */
     public function commitTransaction(): void
     {
-        throw new Exception\RuntimeException(
-            'MongoDB transactions are not yet supported by zealphp-mongodb (see startTransaction()).',
-        );
+        $this->assertNotEnded();
+        zealphp_mongodb_session_commit_transaction($this->sessionId);
+        $this->transactionState = self::TRANSACTION_COMMITTED;
     }
 
-    /** @throws Exception\RuntimeException See startTransaction(). */
     public function abortTransaction(): void
     {
-        throw new Exception\RuntimeException(
-            'MongoDB transactions are not yet supported by zealphp-mongodb (see startTransaction()).',
-        );
+        $this->assertNotEnded();
+        zealphp_mongodb_session_abort_transaction($this->sessionId);
+        $this->transactionState = self::TRANSACTION_ABORTED;
     }
 
     public function endSession(): void
     {
+        if ($this->ended) {
+            return;
+        }
+
+        zealphp_mongodb_session_end($this->sessionId);
+        $this->ended = true;
         $this->transactionState = self::TRANSACTION_NONE;
     }
 
@@ -73,19 +125,28 @@ class Session
         return null;
     }
 
+    /** Logical session id document ({"id": Binary(UUID)}), like the C driver. */
     public function getLogicalSessionId(): object
     {
-        return (object) ['id' => bin2hex(random_bytes(16))];
+        $this->assertNotEnded();
+
+        return (object) zealphp_mongodb_session_lsid($this->sessionId);
     }
 
     public function getClusterTime(): object|null
     {
-        return null;
+        $this->assertNotEnded();
+        $ct = zealphp_mongodb_session_cluster_time($this->sessionId);
+
+        return $ct === null ? null : (object) $ct;
     }
 
     public function getOperationTime(): object|null
     {
-        return null;
+        $this->assertNotEnded();
+        $ot = zealphp_mongodb_session_operation_time($this->sessionId);
+
+        return $ot === null ? null : (object) $ot;
     }
 
     public function getServer(): object|null
@@ -100,9 +161,24 @@ class Session
 
     public function advanceClusterTime(array|object $clusterTime): void
     {
+        // No-op: the Rust driver advances cluster time automatically on every
+        // server response; manual gossip advancement is not exposed.
     }
 
-    public function advanceOperationTime(mixed $operationTime): void
+    public function advanceOperationTime(object $operationTime): void
     {
+        // No-op: see advanceClusterTime().
+    }
+
+    public function __destruct()
+    {
+        $this->endSession();
+    }
+
+    private function assertNotEnded(): void
+    {
+        if ($this->ended) {
+            throw new Exception\RuntimeException('Session has already been ended.');
+        }
     }
 }

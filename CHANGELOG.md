@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.2] - 2026-06-10
+
+### Added — genuine C-driver parity for the three stubbed areas
+- **Real multi-document transactions.** `Client::startSession()` now creates a server-backed `ClientSession` in the Rust driver (session registry, same pattern as cursors). New ext functions `zealphp_mongodb_session_start/_start_transaction/_commit_transaction/_abort_transaction/_end/_lsid/_cluster_time/_operation_time`. Every Collection op accepts `['session' => $session]` (threaded as the internal `__session` registry id) and rides the same server transaction — including reads, which see the transaction snapshot. Session-scoped `find()`/`aggregate()` collect eagerly (driver `SessionCursor` borrow rule) and return an `ArrayCursor`. Replica set required (server rule). Pinned by `tests/Integration/TransactionTest.php` (7 cases: commit-visible, abort-invisible, read-your-own-uncommitted-writes, snapshot isolation, real lsid, operationTime, ended-session guard).
+- **Real change streams.** `Collection::watch()`, `Database::watch()`, `Client::watch()` open a server change stream (`zealphp_mongodb_watch` + `change_stream_next/_resume_token/_is_alive/_close`). `ChangeStream` is a real `Iterator` with mongo-php-library semantics — `next()` blocks up to `maxAwaitTimeMS`, `key()` counts delivered events, `getResumeToken()` returns the live token; pipelines and `fullDocument: updateLookup` supported. Replica set required. Pinned by `tests/Integration/ChangeStreamTest.php` (6 cases incl. pipeline filtering and db-scoped watch).
+- **Real GridFS.** `Database::selectGridFSBucket()` returns a working `Bucket`: `uploadFromStream`, `openUploadStream` (write-through stream wrapper, uploads on `fclose()`, file id known before close), `downloadToStream[ByName]`, `openDownloadStream[ByName]` with revisions, `delete`, `deleteByName`, `rename`, `drop`, `find`/`findOne`, files/chunks collection accessors. Driver-side chunking. Pinned by `tests/Integration/GridFSTest.php` (6 cases incl. a 600 KiB multi-chunk round-trip and binary-safety).
+
+### Changed
+- `Collection::find()`/`aggregate()` return type widened to `Cursor|ArrayCursor` (ArrayCursor only when a session is passed).
+- `Session` unit stubs replaced by integration coverage; constructing `Session`/`ChangeStream`/`Bucket` without the matching ext functions fails fast with a versioned message.
+
+[Unreleased → 0.3.1 notes below]
+
+
 ## [0.3.1] - 2026-06-10
 
 ### Fixed

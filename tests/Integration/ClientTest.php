@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use ZealPHP\MongoDB\ChangeStream;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
@@ -70,14 +71,22 @@ class ClientTest extends TestCase
         $this->assertInstanceOf(Session::class, $session);
     }
 
-    public function testWatchFailsLoud(): void
+    public function testWatchIsReal(): void
     {
-        // The pre-v0.3.1 stub returned an empty ChangeStream that silently
-        // never delivered events; until the real change-stream lands, watch()
-        // refuses loudly.
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('not yet supported');
-        self::$client->watch();
+        // Real change streams since v0.3.2. On a replica set the stream
+        // opens; a standalone server REFUSES change streams — either way the
+        // pre-v0.3.1 silent empty-stub behaviour must be gone.
+        try {
+            $stream = self::$client->watch();
+            $this->assertInstanceOf(ChangeStream::class, $stream);
+            $stream->close();
+        } catch (RuntimeException $e) {
+            $this->assertStringNotContainsString(
+                'not yet supported',
+                $e->getMessage(),
+                'must be a server refusal (standalone), never the old stub throw',
+            );
+        }
     }
 
     public function testConcernGetters(): void

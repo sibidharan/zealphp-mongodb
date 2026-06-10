@@ -40,6 +40,46 @@ namespace {
 
     function zealphp_mongodb_find_all(int $poolId, string $dbName, string $colName, array $filter, ?array $opts = null): array {}
 
+    function zealphp_mongodb_aggregate_all(int $poolId, string $dbName, string $colName, array $pipeline, ?array $opts = null): array {}
+
+    function zealphp_mongodb_session_start(int $poolId, ?array $opts = null): int {}
+
+    function zealphp_mongodb_session_start_transaction(int $sessionId, ?array $opts = null): void {}
+
+    function zealphp_mongodb_session_commit_transaction(int $sessionId): void {}
+
+    function zealphp_mongodb_session_abort_transaction(int $sessionId): void {}
+
+    function zealphp_mongodb_session_end(int $sessionId): void {}
+
+    function zealphp_mongodb_session_lsid(int $sessionId): array {}
+
+    function zealphp_mongodb_session_cluster_time(int $sessionId): ?array {}
+
+    function zealphp_mongodb_session_operation_time(int $sessionId): ?array {}
+
+    function zealphp_mongodb_watch(int $poolId, string $db, string $col, array $pipeline, ?array $opts = null): int {}
+
+    function zealphp_mongodb_change_stream_next(int $streamId, int $timeoutMs): ?array {}
+
+    function zealphp_mongodb_change_stream_resume_token(int $streamId): ?array {}
+
+    function zealphp_mongodb_change_stream_is_alive(int $streamId): bool {}
+
+    function zealphp_mongodb_change_stream_close(int $streamId): void {}
+
+    function zealphp_mongodb_gridfs_upload(int $poolId, string $db, string $bucket, string $filename, string $data, ?array $opts = null): mixed {}
+
+    function zealphp_mongodb_gridfs_download(int $poolId, string $db, string $bucket, array $idWrapper): string {}
+
+    function zealphp_mongodb_gridfs_download_by_name(int $poolId, string $db, string $bucket, string $filename, int $revision): string {}
+
+    function zealphp_mongodb_gridfs_delete(int $poolId, string $db, string $bucket, array $idWrapper): void {}
+
+    function zealphp_mongodb_gridfs_rename(int $poolId, string $db, string $bucket, array $idWrapper, string $newFilename): void {}
+
+    function zealphp_mongodb_gridfs_drop(int $poolId, string $db, string $bucket): void {}
+
     function zealphp_mongodb_cursor_next(int $cursorId): ?array {}
     function zealphp_mongodb_cursor_close(int $cursorId): void {}
     function zealphp_mongodb_cursor_to_array(int $cursorId): array {}

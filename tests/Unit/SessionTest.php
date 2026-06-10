@@ -8,48 +8,33 @@ use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\Session;
 
+use function function_exists;
+
+/**
+ * Session became a REAL server-backed ClientSession in v0.3.2 — behavioral
+ * coverage (start/commit/abort, snapshot reads, lsid, operationTime) lives in
+ * tests/Integration/TransactionTest.php against a replica set. The only thing
+ * unit-testable without the ext is the constructor's fail-fast guard.
+ */
 class SessionTest extends TestCase
 {
-    public function testFreshSessionIsNotInTransaction(): void
+    public function testConstructorFailsFastWithoutExtFunctions(): void
     {
-        $s = new Session(0);
-        $this->assertSame(Session::TRANSACTION_NONE, $s->getTransactionState());
-        $this->assertFalse($s->isInTransaction());
-    }
+        if (function_exists('zealphp_mongodb_session_start')) {
+            $this->markTestSkipped('ext with session support loaded — guard not reachable');
+        }
 
-    /**
-     * Transactions FAIL LOUD until the real ClientSession implementation
-     * lands: the previous stub silently flipped a local state string while
-     * every operation ran NON-transactionally — fake ACID, the worst silent
-     * failure a database driver can have.
-     */
-    public function testStartTransactionFailsLoud(): void
-    {
-        $s = new Session(0);
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('not yet supported');
-        $s->startTransaction();
+        $this->expectExceptionMessage('zealphp_mongodb.so >= 0.3.2');
+        new Session(0);
     }
 
-    public function testCommitTransactionFailsLoud(): void
+    public function testTransactionStateConstantsMatchCDriverVocabulary(): void
     {
-        $s = new Session(0);
-        $this->expectException(RuntimeException::class);
-        $s->commitTransaction();
-    }
-
-    public function testAbortTransactionFailsLoud(): void
-    {
-        $s = new Session(0);
-        $this->expectException(RuntimeException::class);
-        $s->abortTransaction();
-    }
-
-    public function testLogicalSessionId(): void
-    {
-        $s = new Session(0);
-        $id = $s->getLogicalSessionId();
-        $this->assertIsObject($id);
-        $this->assertObjectHasProperty('id', $id);
+        $this->assertSame('none', Session::TRANSACTION_NONE);
+        $this->assertSame('starting', Session::TRANSACTION_STARTING);
+        $this->assertSame('in_progress', Session::TRANSACTION_IN_PROGRESS);
+        $this->assertSame('committed', Session::TRANSACTION_COMMITTED);
+        $this->assertSame('aborted', Session::TRANSACTION_ABORTED);
     }
 }

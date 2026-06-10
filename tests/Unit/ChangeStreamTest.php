@@ -7,51 +7,32 @@ namespace ZealPHP\MongoDB\Tests\Unit;
 use Iterator;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\ChangeStream;
+use ZealPHP\MongoDB\Exception\RuntimeException;
 
+use function class_implements;
+use function function_exists;
+
+/**
+ * ChangeStream became a REAL server change stream in v0.3.2 — behavioral
+ * coverage (event delivery, pipelines, resume tokens, updateLookup) lives in
+ * tests/Integration/ChangeStreamTest.php against a replica set. Without the
+ * ext only the structural contract and the fail-fast guard are testable.
+ */
 class ChangeStreamTest extends TestCase
 {
-    public function testEmptyStream(): void
-    {
-        $cs = new ChangeStream();
-        $this->assertFalse($cs->valid());
-        $this->assertNull($cs->current());
-        $this->assertNull($cs->getResumeToken());
-    }
-
     public function testImplementsIterator(): void
     {
-        $cs = new ChangeStream();
-        $this->assertInstanceOf(Iterator::class, $cs);
+        $this->assertContains(Iterator::class, (array) class_implements(ChangeStream::class));
     }
 
-    public function testKeyReturnsNull(): void
+    public function testConstructorFailsFastWithoutExtFunctions(): void
     {
-        $cs = new ChangeStream();
-        $this->assertNull($cs->key());
-    }
-
-    public function testNextDoesNotError(): void
-    {
-        $cs = new ChangeStream();
-        $cs->next();
-        $this->assertFalse($cs->valid());
-    }
-
-    public function testRewindDoesNotError(): void
-    {
-        $cs = new ChangeStream();
-        $cs->rewind();
-        $this->assertFalse($cs->valid());
-    }
-
-    public function testForeachProducesNoResults(): void
-    {
-        $cs = new ChangeStream();
-        $results = [];
-        foreach ($cs as $item) {
-            $results[] = $item;
+        if (function_exists('zealphp_mongodb_change_stream_next')) {
+            $this->markTestSkipped('ext with change stream support loaded — guard not reachable');
         }
 
-        $this->assertEmpty($results);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('zealphp_mongodb.so >= 0.3.2');
+        new ChangeStream(0);
     }
 }

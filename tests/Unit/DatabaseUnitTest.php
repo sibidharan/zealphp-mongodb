@@ -13,6 +13,8 @@ use ZealPHP\MongoDB\ReadConcern;
 use ZealPHP\MongoDB\ReadPreference;
 use ZealPHP\MongoDB\WriteConcern;
 
+use function function_exists;
+
 class DatabaseUnitTest extends TestCase
 {
     private Database $db;
@@ -80,6 +82,10 @@ class DatabaseUnitTest extends TestCase
 
     public function testSelectGridFSBucketReturnsBucket(): void
     {
+        if (! function_exists('zealphp_mongodb_gridfs_upload')) {
+            $this->markTestSkipped('GridFS Bucket requires the ext (real implementation since v0.3.2)');
+        }
+
         $bucket = $this->db->selectGridFSBucket();
         $this->assertInstanceOf(Bucket::class, $bucket);
         $this->assertSame('fs', $bucket->getBucketName());
@@ -88,6 +94,10 @@ class DatabaseUnitTest extends TestCase
 
     public function testSelectGridFSBucketWithCustomOptions(): void
     {
+        if (! function_exists('zealphp_mongodb_gridfs_upload')) {
+            $this->markTestSkipped('GridFS Bucket requires the ext (real implementation since v0.3.2)');
+        }
+
         $bucket = $this->db->selectGridFSBucket(['bucketName' => 'images']);
         $this->assertInstanceOf(Bucket::class, $bucket);
         $this->assertSame('images', $bucket->getBucketName());

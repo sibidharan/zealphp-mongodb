@@ -42,12 +42,30 @@ See [docs/case-study-dual-runtime.md](docs/case-study-dual-runtime.md) for the f
 ## Features
 
 - **Full API parity** with the official PHP MongoDB library — Collection (25 methods), Database (15 methods), Client (12 methods)
+- **Real multi-document transactions** (v0.3.2) — server-backed `ClientSession` via `$client->startSession()` + `['session' => $session]` on every CRUD op; commit/abort/snapshot reads, replica set required
+- **Real change streams** (v0.3.2) — `$collection->watch()` / `$database->watch()` / `$client->watch()` with pipelines, `fullDocument: updateLookup`, resume tokens; replica set required
+- **Real GridFS** (v0.3.2) — `selectGridFSBucket()` with upload/download streams, multi-chunk files, revisions, rename/delete/drop
 - **Non-blocking async** via eventfd + OpenSwoole `Event::add` + `Channel` — zero thread blocking in coroutine mode
 - **Complete BSON type system** — ObjectId, UTCDateTime, Regex, Binary, Decimal128, Int64, Timestamp, Javascript, MinKey, MaxKey, Document, PackedArray
 - **All query options** — upsert, returnDocument, projection, sort, limit, skip on both sync and async paths
 - **Rust performance** — backed by the official MongoDB Rust driver with tokio async runtime
 - **Connection pooling** — persistent connections across requests, managed by the Rust extension
 - **Dual-mode operation** — sync (block_on) without OpenSwoole, async (eventfd) with OpenSwoole coroutines
+
+## Parity status (vs `mongodb/mongodb` + ext-mongodb)
+
+| Area | Status |
+|------|--------|
+| CRUD, aggregation, indexes, BSON types | ✅ full parity, benchmark-validated |
+| Transactions (`startSession`, `startTransaction`, commit/abort, `['session' => …]`) | ✅ real since v0.3.2 (replica set required — server rule, same as the C driver) |
+| Change streams (`watch` at collection/db/client scope, pipelines, resume tokens, `updateLookup`) | ✅ real since v0.3.2 (replica set required) |
+| GridFS (`uploadFromStream`/`openUploadStream`/`downloadToStream`/by-name revisions/rename/delete/drop/find) | ✅ real since v0.3.2 — note: `openUploadStream` buffers in memory and uploads on `fclose()`; downloads return a rewound `php://temp` handle |
+| `Session::advanceClusterTime` / `advanceOperationTime` | no-op — the Rust driver gossips cluster time automatically |
+| `MongoDB\with_transaction()`-style callback retry helper | not implemented — use explicit `startTransaction`/`commitTransaction` with your own retry |
+| Sessions on `watch()` / causally-consistent change streams | not implemented |
+| `mapReduce`, legacy `count` server command | not implemented (also removed in `mongodb/mongodb` 2.x) |
+
+Anything in the "not implemented" rows **throws** (`Exception\RuntimeException`) rather than silently no-oping.
 
 ## Requirements
 

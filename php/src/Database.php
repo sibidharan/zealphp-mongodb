@@ -55,6 +55,12 @@ class Database implements Stringable
         return (array) $result;
     }
 
+    /** Watch every collection in this database (replica set required). */
+    public function watch(array $pipeline = [], array $options = []): ChangeStream
+    {
+        return ChangeStream::open($this->poolId, $this->databaseName, '', $pipeline, $options);
+    }
+
     public function aggregate(array $pipeline, array $options = []): ArrayCursor
     {
         $pipeline = Collection::prepareBSON($pipeline);

@@ -10,7 +10,6 @@ use ZealPHP\MongoDB\ArrayCursor;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
-use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\GridFS\Bucket;
 use ZealPHP\MongoDB\ReadConcern;
 use ZealPHP\MongoDB\ReadPreference;
@@ -83,8 +82,8 @@ class DatabaseTest extends TestCase
         $this->assertInstanceOf(Bucket::class, $bucket);
         $this->assertSame('fs', $bucket->getBucketName());
 
-        $this->expectException(RuntimeException::class);
-        $bucket->find();
+        // Real GridFS since v0.3.2 — find() queries fs.files (empty is fine).
+        $this->assertIsIterable($bucket->find());
     }
 
     public function testWithOptions(): void

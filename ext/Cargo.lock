@@ -2187,7 +2187,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -2791,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "zealphp-mongodb-ext"
-version = "0.1.1"
+version = "0.3.2"
 dependencies = [
  "base64",
  "bson",

@@ -78,18 +78,10 @@ class Client implements Stringable
         return new Session($this->poolId, $options);
     }
 
-    /**
-     * @throws Exception\RuntimeException Change streams are not yet wired to
-     * the server. Failing loud is deliberate: the pre-v0.3.1 stub returned an
-     * empty ChangeStream that silently never delivered events.
-     */
+    /** Watch the whole deployment for changes (replica set required). */
     public function watch(array $pipeline = [], array $options = []): ChangeStream
     {
-        throw new Exception\RuntimeException(
-            'Change streams (watch) are not yet supported by zealphp-mongodb '
-            . '(real change streams land in v0.4.0). '
-            . 'Refusing to fake it: the stub stream would never deliver events.',
-        );
+        return ChangeStream::open($this->poolId, '', '', $pipeline, $options);
     }
 
     public function __toString(): string
