@@ -1,0 +1,63 @@
+<?php
+
+/**
+ * Minimal OpenSwoole stubs for static analysis (Psalm) — the real classes
+ * come from the openswoole extension at runtime. Only the surface this
+ * library touches is declared.
+ */
+
+namespace OpenSwoole;
+
+class Coroutine
+{
+    public static function getCid(): int
+    {
+    }
+
+    public static function sleep(float $seconds): bool
+    {
+    }
+}
+
+class Event
+{
+    public static function add(mixed $fd, callable|null $readCallback = null, callable|null $writeCallback = null, int $events = 0): bool
+    {
+    }
+
+    public static function del(mixed $fd): bool
+    {
+    }
+}
+
+namespace OpenSwoole\Coroutine;
+
+class Channel
+{
+    public function __construct(int $capacity = 1)
+    {
+    }
+
+    public function push(mixed $data, float $timeout = -1): bool
+    {
+    }
+
+    public function pop(float $timeout = -1): mixed
+    {
+    }
+
+    public function close(): bool
+    {
+    }
+}
+
+class System
+{
+    public static function waitEvent(mixed $socket, int $events = 512, float $timeout = -1): int|false
+    {
+    }
+
+    public static function sleep(float $seconds): bool
+    {
+    }
+}

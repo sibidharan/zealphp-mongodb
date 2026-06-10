@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Throwable;
 use ZealPHP\MongoDB\ChangeStream;
 use ZealPHP\MongoDB\Client;
 use ZealPHP\MongoDB\Collection;
 use ZealPHP\MongoDB\Database;
-use ZealPHP\MongoDB\Exception\RuntimeException;
 use ZealPHP\MongoDB\ReadConcern;
 use ZealPHP\MongoDB\ReadPreference;
 use ZealPHP\MongoDB\Session;
@@ -80,11 +80,17 @@ class ClientTest extends TestCase
             $stream = self::$client->watch();
             $this->assertInstanceOf(ChangeStream::class, $stream);
             $stream->close();
-        } catch (RuntimeException $e) {
+        } catch (Throwable $e) {
+            // The ext surfaces server refusals as a plain \Exception.
             $this->assertStringNotContainsString(
                 'not yet supported',
                 $e->getMessage(),
                 'must be a server refusal (standalone), never the old stub throw',
+            );
+            $this->assertStringContainsString(
+                'replica set',
+                $e->getMessage(),
+                'standalone refusal is the only acceptable failure',
             );
         }
     }

@@ -17,6 +17,7 @@
     </projectFiles>
     <stubs>
         <file name="stubs/zealphp_mongodb.phpstub"/>
+        <file name="stubs/openswoole.phpstub"/>
     </stubs>
     <issueHandlers>
         <MissingOverrideAttribute errorLevel="suppress"/>
