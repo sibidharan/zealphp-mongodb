@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Iterator;
+use OpenSwoole\Coroutine\Channel;
 use ReturnTypeWillChange;
 
 use function function_exists;
@@ -150,7 +151,27 @@ class ChangeStream implements Iterator
     private function poll(int $timeoutMs): void
     {
         $this->assertOpen();
-        $event = zealphp_mongodb_change_stream_next($this->streamId, $timeoutMs);
+
+        if (AsyncBridge::isCoroutineMode()) {
+            // Slice the wait: each ext call is a NON-BLOCKING probe
+            // (timeout 0 = one next_if_any check), and the gaps yield to the
+            // OpenSwoole scheduler via a Channel pop. A single blocking ext
+            // call would freeze the whole worker thread for maxAwaitTimeMS,
+            // starving every sibling coroutine — including the one trying to
+            // produce the event being awaited.
+            $event = zealphp_mongodb_change_stream_next($this->streamId, 0);
+            if ($event === null && $timeoutMs > 0) {
+                $gate = new Channel(1);
+                $spentMs = 0;
+                while ($event === null && $spentMs < $timeoutMs) {
+                    $gate->pop(0.025); // yields ~25 ms
+                    $spentMs += 25;
+                    $event = zealphp_mongodb_change_stream_next($this->streamId, 0);
+                }
+            }
+        } else {
+            $event = zealphp_mongodb_change_stream_next($this->streamId, $timeoutMs);
+        }
 
         if ($event === null) {
             $this->current = null;
