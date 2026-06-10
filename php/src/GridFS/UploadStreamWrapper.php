@@ -6,14 +6,17 @@ namespace ZealPHP\MongoDB\GridFS;
 
 use ZealPHP\MongoDB\Exception\RuntimeException;
 
+use function bin2hex;
 use function fopen;
-use function get_resource_id;
 use function in_array;
+use function random_bytes;
 use function stream_context_create;
 use function stream_context_get_options;
+use function stream_get_meta_data;
 use function stream_get_wrappers;
 use function stream_wrapper_register;
 use function strlen;
+use function substr;
 
 use const SEEK_SET;
 
@@ -42,8 +45,16 @@ class UploadStreamWrapper
 
     private bool $uploaded = false;
 
-    /** @var array<int, mixed> resource id → pre-generated file id */
-    private static array $streamIds = [];
+    /**
+     * @var array<string, mixed> open-stream token → pre-generated file id.
+     * BOUNDED: every entry is removed in stream_close(), which PHP invokes
+     * on fclose() AND on resource GC (abandoned streams) — no growth on
+     * long-running workers. (A context-based design doesn't work: the fopen
+     * context is not readable from OUTSIDE via the stream handle.)
+     */
+    private static array $ids = [];
+
+    private string $token = '';
 
     /** @return resource a writable stream; fclose() performs the upload */
     public static function open(Bucket $bucket, string $filename, array $options, mixed $fileId)
@@ -51,6 +62,9 @@ class UploadStreamWrapper
         if (! in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
             stream_wrapper_register(self::PROTOCOL, self::class);
         }
+
+        $token = bin2hex(random_bytes(8));
+        self::$ids[$token] = $fileId;
 
         $context = stream_context_create([
             self::PROTOCOL => [
@@ -60,12 +74,14 @@ class UploadStreamWrapper
             ],
         ]);
 
-        $stream = fopen(self::PROTOCOL . '://' . $filename, 'wb', false, $context);
+        // The token IS the path — recoverable from the resource via
+        // stream_get_meta_data()['uri'] for getFileIdForStream().
+        $stream = fopen(self::PROTOCOL . '://' . $token, 'wb', false, $context);
         if ($stream === false) {
+            unset(self::$ids[$token]);
+
             throw new RuntimeException('Failed to open GridFS upload stream');
         }
-
-        self::$streamIds[get_resource_id($stream)] = $fileId;
 
         return $stream;
     }
@@ -73,7 +89,10 @@ class UploadStreamWrapper
     /** @param resource $stream */
     public static function idForStream($stream): mixed
     {
-        return self::$streamIds[get_resource_id($stream)] ?? null;
+        $uri = stream_get_meta_data($stream)['uri'] ?? '';
+        $token = substr($uri, strlen(self::PROTOCOL . '://'));
+
+        return self::$ids[$token] ?? null;
     }
 
     public function stream_open(string $path, string $mode, int $flags, string|null &$openedPath): bool
@@ -87,6 +106,7 @@ class UploadStreamWrapper
         $this->bucket = $opts['bucket'];
         $this->filename = $opts['filename'];
         $this->options = $opts['options'] ?? [];
+        $this->token = substr($path, strlen(self::PROTOCOL . '://'));
 
         return true;
     }
@@ -105,6 +125,12 @@ class UploadStreamWrapper
         }
 
         $this->uploaded = true;
+        $id = self::$ids[$this->token] ?? null;
+        unset(self::$ids[$this->token]); // bounded-map guarantee — evict BEFORE upload (even on throw)
+        if ($id !== null) {
+            $this->options['_id'] = $id;
+        }
+
         $this->bucket->uploadBytes($this->filename, $this->buffer, $this->options);
         $this->buffer = '';
     }

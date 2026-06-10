@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3] - 2026-06-10
+
+### Fixed
+- **Unbounded memory growth in `Bucket::openUploadStream()`** — the upload-stream wrapper kept a `resource id → file id` static map that was never evicted: one orphan entry per upload, forever, on long-running workers (the classic ext-mongodb-area growth pattern). The id now rides a per-stream token (the wrapper path) and is **evicted in `stream_close()`**, which PHP invokes on `fclose()` AND on resource GC — bounded even for abandoned streams. (A stream-context design doesn't work: the fopen context is not readable from outside via the stream handle.)
+- Memory soak pinned: 3,000 iterations of session create/end (explicit + destructor-abandoned), change-stream open/close (destructor-only), and GridFS upload-stream/download/delete — **RSS flat at +0.0 MB after warmup**; Rust session/stream registries confirmed destructor-evicted.
+
+
 ## [0.3.2] - 2026-06-10
 
 ### Added — genuine C-driver parity for the three stubbed areas
