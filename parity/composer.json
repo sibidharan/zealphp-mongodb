@@ -1,0 +1,23 @@
+{
+    "name": "zealphp/mongodb-parity",
+    "description": "Dual-runtime parity + memory test app: Apache/mod_php/ext-mongodb (C) vs ZealPHP/OpenSwoole/zealphp_mongodb (Rust), same service code.",
+    "type": "project",
+    "license": "MIT",
+    "repositories": [
+        { "type": "path", "url": "..", "options": { "symlink": false } }
+    ],
+    "require": {
+        "php": ">=8.3",
+        "zealphp/zealphp": "^0.4.6",
+        "zealphp/mongodb": "@dev",
+        "mongodb/mongodb": "^2.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "ZealPHP\\MongoDB\\Parity\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": false
+    }
+}

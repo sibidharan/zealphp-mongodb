@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.4] - 2026-06-10
+
+### Fixed
+- **Drop-in contract: `prepareBSON()` now accepts official-namespace `MongoDB\BSON\*` value objects** (Binary, Decimal128, Timestamp, Javascript, MinKey, MaxKey, Int64) — found by the new parity rig: user code written for the official library passes these (the drop-in promise), but they fell into the generic object branch and crashed on private props (`"\0"` keys). Mapped explicitly via getters to canonical extended JSON v2 (the polyfill's and C ext's `jsonSerialize()` speak the legacy v1 dialect the Rust parser does not accept). Generic plain objects now serialize via `get_object_vars()` (public props) instead of an `(array)` cast.
+
+### Added
+- **`parity/` — dual-runtime parity + memory rig**: the same service code served by Apache + mod_php + pecl ext-mongodb (C) and by ZealPHP + OpenSwoole + zealphp_mongodb (Rust), against one replica set; results canonicalized and deep-diffed. **11/11 op groups byte-identical** — CRUD, queries, aggregation, full BSON type matrix, indexes, bulk, transactions (commit + abort visibility), change streams (pipelines + resume tokens), GridFS (multi-chunk + revisions). Plus `scripts/soak.sh` RSS-bounded memory soak for both paths.
+
+
 ## [0.3.3] - 2026-06-10
 
 ### Fixed

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use JsonSerializable;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\Regex;
+use MongoDB\BSON\Type;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
@@ -23,10 +25,14 @@ use function array_is_list;
 use function array_map;
 use function array_merge;
 use function base64_decode;
+use function base64_encode;
 use function count;
+use function dechex;
+use function get_object_vars;
 use function hexdec;
 use function is_array;
 use function is_object;
+use function str_pad;
 use function zealphp_mongodb_aggregate;
 use function zealphp_mongodb_aggregate_all;
 use function zealphp_mongodb_batch_result;
@@ -54,6 +60,7 @@ use function zealphp_mongodb_update_many;
 use function zealphp_mongodb_update_one;
 
 use const OPENSWOOLE_EVENT_READ;
+use const STR_PAD_LEFT;
 
 class Collection
 {
@@ -545,10 +552,68 @@ class Collection
             return $result;
         }
 
+        if ($data instanceof Type) {
+            // Official-namespace BSON value objects (real ext-mongodb classes
+            // OR the polyfill) — the drop-in contract means user code passes
+            // MongoDB\BSON\Binary / Timestamp / Decimal128 / MinKey / … here.
+            // Found by the parity rig: these previously fell into the generic
+            // object cast below and crashed on private props ("\0" keys).
+            // Mapped explicitly via getters to CANONICAL extended JSON v2:
+            // the polyfill's and C ext's jsonSerialize() speak the legacy v1
+            // dialect ({"\$binary": "..", "\$type": ".."}) which the Rust
+            // parser does not accept.
+            if ($data instanceof \MongoDB\BSON\Binary) {
+                return [
+                    '$binary' => [
+                        'base64' => base64_encode($data->getData()),
+                        'subType' => str_pad(dechex($data->getType()), 2, '0', STR_PAD_LEFT),
+                    ],
+                ];
+            }
+
+            if ($data instanceof \MongoDB\BSON\Decimal128) {
+                return ['$numberDecimal' => (string) $data];
+            }
+
+            if ($data instanceof \MongoDB\BSON\Timestamp) {
+                return ['$timestamp' => ['t' => $data->getTimestamp(), 'i' => $data->getIncrement()]];
+            }
+
+            if ($data instanceof \MongoDB\BSON\Javascript) {
+                $js = ['$code' => $data->getCode()];
+                $scope = $data->getScope();
+                if ($scope !== null) {
+                    $js['$scope'] = self::prepareBSON((array) $scope);
+                }
+
+                return $js;
+            }
+
+            if ($data instanceof \MongoDB\BSON\MinKey) {
+                return ['$minKey' => 1];
+            }
+
+            if ($data instanceof \MongoDB\BSON\MaxKey) {
+                return ['$maxKey' => 1];
+            }
+
+            if ($data instanceof \MongoDB\BSON\Int64) {
+                return (int) (string) $data;
+            }
+
+            if ($data instanceof JsonSerializable) {
+                return self::prepareBSON($data->jsonSerialize());
+            }
+        }
+
         if (is_object($data)) {
             $result = new stdClass();
 
-            foreach ((array) $data as $key => $value) {
+            // get_object_vars(): PUBLIC props only — an (array) cast mangles
+            // private/protected keys with "\0Class\0" prefixes, which then
+            // blow up on property assignment. Matches the official library's
+            // plain-object document semantics.
+            foreach (get_object_vars($data) as $key => $value) {
                 $result->$key = self::prepareBSON($value);
             }
 
