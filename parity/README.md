@@ -24,7 +24,28 @@ unicode, nested arrays) · `indexes` · `bulk` · `txn_commit` / `txn_abort`
 resume token) · `gridfs` (multi-chunk round-trip, revisions, metadata,
 delete).
 
-## Run
+## Run — reproducible, one command (anyone, anywhere)
+
+From the repo root, with nothing but Docker installed:
+
+```bash
+docker compose -f parity/docker-compose.yml up --build --abort-on-container-exit parity
+```
+
+That builds BOTH stacks from scratch in one image (pecl ext-mongodb for
+the C path; rustup + cargo-built `zealphp_mongodb.so`, `pie install
+zealphp/ext`, and Packagist `zealphp/zealphp` for the Rust path), boots a
+single-node MongoDB **replica set** (auto-initiated via the compose
+healthcheck), starts Apache on `:8089` and ZealPHP on `:8090`, and runs
+the full deep-diff. **Exit code 0 = byte-identical** — CI-friendly.
+
+Add the memory soaks (≈10 min extra):
+
+```bash
+SOAK=1 docker compose -f parity/docker-compose.yml up --build --abort-on-container-exit parity
+```
+
+## Run against an existing environment
 
 ```bash
 # parity: every op, both paths, byte-diffed

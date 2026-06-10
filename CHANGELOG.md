@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5] - 2026-06-10
+
+### Added
+- **One-command reproducible parity rig** — `docker compose -f parity/docker-compose.yml up --build --abort-on-container-exit parity` builds BOTH stacks from scratch in one image (pecl ext-mongodb + Apache for the C path; rustup/cargo-built `zealphp_mongodb.so`, `pie install zealphp/ext`, Packagist `zealphp/zealphp` for the Rust path), boots a single-node MongoDB replica set (auto-initiated via compose healthcheck), and deep-diffs all 11 op groups. **Exit code 0 = byte-identical** (CI-friendly); `SOAK=1` adds the RSS-bounded memory soaks. Verified end-to-end from a pristine checkout: 11/11 identical, FULL PARITY, exit 0.
+
+
 ## [0.3.4] - 2026-06-10
 
 ### Fixed

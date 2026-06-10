@@ -1,0 +1,38 @@
+# Reproducible dual-runtime parity rig — from the REPO ROOT:
+#
+#   docker compose -f parity/docker-compose.yml up --build --abort-on-container-exit parity
+#
+# Exit code 0 = every op group byte-identical between the C driver
+# (Apache + mod_php + ext-mongodb) and the Rust driver (ZealPHP +
+# OpenSwoole + zealphp_mongodb). Set SOAK=1 to also run the RSS-bounded
+# memory soaks on both paths (adds ~10 minutes).
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      # Initiates the single-node replica set on first probe, then reports
+      # healthy once a PRIMARY exists (transactions + change streams need it).
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().myState === 1 ? quit(0) : quit(1) }
+          catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}); quit(1) }
+        "
+      interval: 3s
+      timeout: 10s
+      retries: 30
+
+  parity:
+    build:
+      context: ..
+      dockerfile: parity/Dockerfile
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PARITY_MONGODB_URI: "mongodb://mongo:27017/?replicaSet=rs0&directConnection=true"
+      SOAK: "${SOAK:-0}"
+      SOAK_N: "${SOAK_N:-3000}"
+    ports:
+      - "8089:8089"
+      - "8090:8090"

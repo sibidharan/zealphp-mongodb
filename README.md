@@ -39,6 +39,14 @@ Measured in production on the same container, same MongoDB, same dataset (10k+ u
 
 See [docs/case-study-dual-runtime.md](docs/case-study-dual-runtime.md) for the full analysis.
 
+**Reproduce the parity claim yourself** — one command, nothing but Docker required:
+
+```bash
+docker compose -f parity/docker-compose.yml up --build --abort-on-container-exit parity
+```
+
+Builds both stacks (Apache + mod_php + pecl ext-mongodb vs ZealPHP + OpenSwoole + this driver) in one image, boots a MongoDB replica set, and deep-diffs **11 op groups** — CRUD, queries, aggregation, BSON types, indexes, bulk, transactions, change streams, GridFS. Exit 0 = byte-identical. `SOAK=1` adds RSS-bounded memory soaks on both paths. See [parity/README.md](parity/README.md).
+
 ## Features
 
 - **Full API parity** with the official PHP MongoDB library — Collection (25 methods), Database (15 methods), Client (12 methods)
