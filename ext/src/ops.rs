@@ -115,9 +115,10 @@ pub fn aggregate(
     db: &str,
     col: &str,
     pipeline: Vec<Document>,
+    opts: mongodb::options::AggregateOptions,
 ) -> Result<mongodb::Cursor<Document>, String> {
     let collection = client.database(db).collection::<Document>(col);
-    coroutine::run_sync(async move { collection.aggregate(pipeline).await })
+    coroutine::run_sync(async move { collection.aggregate(pipeline).with_options(opts).await })
 }
 
 pub fn find_one_and_update(

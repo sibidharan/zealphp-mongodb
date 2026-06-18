@@ -117,6 +117,24 @@ fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions 
     uo
 }
 
+fn parse_aggregate_options(opts: Option<&Zval>) -> mongodb::options::AggregateOptions {
+    let mut ao = mongodb::options::AggregateOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                // Previously every aggregate option was dropped (#15).
+                if let Some(v) = arr.get("allowDiskUse") { if let Some(b) = v.bool() { ao.allow_disk_use = Some(b); } }
+                if let Some(v) = arr.get("comment") { if let Some(s) = v.str() { ao.comment = Some(bson::Bson::String(s.to_string())); } }
+                if let Some(v) = arr.get("let") { if let Ok(d) = bson_convert::php_to_doc(v) { ao.let_vars = Some(d); } }
+                if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { ao.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
+                if let Some(v) = arr.get("batchSize") { if let Some(n) = v.long() { ao.batch_size = Some(n as u32); } }
+                if let Some(c) = parse_collation(arr) { ao.collation = Some(c); }
+            }
+        }
+    }
+    ao
+}
+
 fn parse_insert_one_options(opts: Option<&Zval>) -> mongodb::options::InsertOneOptions {
     let mut io = mongodb::options::InsertOneOptions::default();
     if let Some(z) = opts {
@@ -704,12 +722,13 @@ pub fn zealphp_mongodb_aggregate(
     db: &str,
     col: &str,
     pipeline: &Zval,
-    _opts: Option<&Zval>,
+    opts: Option<&Zval>,
 ) -> PhpResult<i64> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let pipeline_docs =
         bson_convert::php_to_pipeline(pipeline).map_err(|e| PhpException::default(e))?;
-    let mongo_cursor = ops::aggregate(&client, db, col, pipeline_docs)
+    let ao = parse_aggregate_options(opts);
+    let mongo_cursor = ops::aggregate(&client, db, col, pipeline_docs, ao)
         .map_err(|e| PhpException::default(e))?;
     let cursor_id = cursor::store_doc_cursor(mongo_cursor);
     Ok(cursor_id as i64)
