@@ -71,6 +71,7 @@ final class ParityApi
             'drop_index_info' => $this->dropIndexInfo($db),
             'pipeline_update' => $this->pipelineUpdate($db),
             'type_map' => $this->typeMapOp($db),
+            'db_info' => $this->dbInfo($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -866,6 +867,30 @@ final class ParityApi
             'object_root_is_stdclass' => $asObject instanceof \stdClass,
             'object_nested_is_stdclass' => ($asObject->nested ?? null) instanceof \stdClass,
             'default_root_is_bsondoc' => $default instanceof \MongoDB\Model\BSONDocument,
+        ];
+    }
+
+    /**
+     * listDatabases shape parity (cluster admin / #33): entries must be
+     * DatabaseInfo objects exposing getName()/getSizeOnDisk()/isEmpty(), not
+     * bare ['name'=>…] arrays. (sizeOnDisk values are deployment-specific, so
+     * only their type/shape is compared — and the always-present `admin` db.)
+     */
+    private function dbInfo(object $db): array
+    {
+        $byName = [];
+        foreach ($this->client->listDatabases() as $info) {
+            $byName[$info->getName()] = $info;
+        }
+
+        $admin = $byName['admin'] ?? null;
+
+        return [
+            'admin_present' => $admin !== null,
+            'admin_name' => $admin?->getName(),
+            'admin_size_is_int' => \is_int($admin?->getSizeOnDisk()),
+            'admin_isempty_is_bool' => \is_bool($admin?->isEmpty()),
+            'names_include_admin' => \in_array('admin', \array_map(static fn ($i) => $i->getName(), \array_values($byName)), true),
         ];
     }
 }

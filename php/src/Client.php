@@ -6,10 +6,12 @@ namespace ZealPHP\MongoDB;
 
 use Stringable;
 
+use function array_map;
+use function array_merge;
+use function is_array;
 use function zealphp_mongodb_close;
 use function zealphp_mongodb_connect;
 use function zealphp_mongodb_drop_database;
-use function zealphp_mongodb_list_databases;
 
 class Client implements Stringable
 {
@@ -45,20 +47,37 @@ class Client implements Stringable
         return $this->selectCollection($databaseName, $collectionName, $options);
     }
 
+    /** @return list<DatabaseInfo> */
     public function listDatabases(array $options = []): array
     {
-        $names = zealphp_mongodb_list_databases($this->poolId);
-        $result = [];
-        foreach ($names as $name) {
-            $result[] = ['name' => $name];
+        // Run the admin listDatabases command so each entry carries name +
+        // sizeOnDisk + empty (and respects filter/nameOnly), wrapped in a
+        // DatabaseInfo like the official driver — not a bare ['name'=>…] (#33).
+        $cmd = ['listDatabases' => 1];
+        foreach (['filter', 'nameOnly', 'authorizedDatabases', 'comment'] as $key) {
+            if (! isset($options[$key])) {
+                continue;
+            }
+
+            $cmd[$key] = $options[$key];
         }
 
-        return $result;
+        $result = $this->selectDatabase('admin')->command($cmd);
+        $databases = $result['databases'] ?? [];
+
+        return array_map(
+            static fn ($d) => new DatabaseInfo(is_array($d) ? $d : (array) $d),
+            $databases,
+        );
     }
 
+    /** @return list<string> */
     public function listDatabaseNames(array $options = []): array
     {
-        return zealphp_mongodb_list_databases($this->poolId);
+        return array_map(
+            static fn (DatabaseInfo $info) => $info->getName(),
+            $this->listDatabases(array_merge($options, ['nameOnly' => true])),
+        );
     }
 
     public function getPoolId(): int
