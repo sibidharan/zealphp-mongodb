@@ -7,7 +7,6 @@
 //! semantics (mongo-php-library parity) onto the timeout.
 
 use bson::Document;
-use mongodb::change_stream::event::ChangeStreamEvent;
 use mongodb::change_stream::ChangeStream;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +17,11 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::coroutine;
 use crate::pool;
 
-type SharedStream = Arc<TokioMutex<ChangeStream<ChangeStreamEvent<Document>>>>;
+// Stream RAW change-event documents, not the typed ChangeStreamEvent. The typed
+// struct dropped any custom fields a pipeline added ($addFields/$project, #64)
+// and failed to deserialize when a $project/$replaceRoot removed operationType
+// (#63). A raw Document preserves whatever the server sends.
+type SharedStream = Arc<TokioMutex<ChangeStream<Document>>>;
 
 lazy_static::lazy_static! {
     static ref STREAMS: RwLock<HashMap<u64, SharedStream>> = RwLock::new(HashMap::new());
@@ -28,8 +31,11 @@ static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 pub struct WatchOptions {
     pub full_document: Option<String>,
+    pub full_document_before_change: Option<String>,
     pub resume_after: Option<Document>,
     pub start_after: Option<Document>,
+    pub start_at_operation_time: Option<bson::Timestamp>,
+    pub show_expanded_events: Option<bool>,
     pub max_await_time_ms: Option<u64>,
     pub batch_size: Option<u32>,
 }
@@ -65,6 +71,20 @@ pub fn watch(
             bson::from_bson(bson::Bson::Document(doc)).map_err(|e| e.to_string())?;
         cs_opts.start_after = Some(token);
     }
+    if let Some(fdbc) = opts.full_document_before_change.as_deref() {
+        cs_opts.full_document_before_change = Some(match fdbc {
+            "whenAvailable" => mongodb::options::FullDocumentBeforeChangeType::WhenAvailable,
+            "required" => mongodb::options::FullDocumentBeforeChangeType::Required,
+            "off" => mongodb::options::FullDocumentBeforeChangeType::Off,
+            other => mongodb::options::FullDocumentBeforeChangeType::Other(other.to_string()),
+        });
+    }
+    if let Some(ts) = opts.start_at_operation_time {
+        cs_opts.start_at_operation_time = Some(ts);
+    }
+    if let Some(see) = opts.show_expanded_events {
+        cs_opts.show_expanded_events = Some(see);
+    }
     if let Some(ms) = opts.max_await_time_ms {
         cs_opts.max_await_time = Some(Duration::from_millis(ms));
     }
@@ -76,16 +96,17 @@ pub fn watch(
     let col_owned = col.map(str::to_string);
 
     let stream = coroutine::run_sync(async move {
-        match (db_owned, col_owned) {
+        let typed = match (db_owned, col_owned) {
             (Some(d), Some(c)) => {
                 let coll = client.database(&d).collection::<Document>(&c);
-                coll.watch().pipeline(pipeline).with_options(cs_opts).await
+                coll.watch().pipeline(pipeline).with_options(cs_opts).await?
             }
             (Some(d), None) => {
-                client.database(&d).watch().pipeline(pipeline).with_options(cs_opts).await
+                client.database(&d).watch().pipeline(pipeline).with_options(cs_opts).await?
             }
-            _ => client.watch().pipeline(pipeline).with_options(cs_opts).await,
-        }
+            _ => client.watch().pipeline(pipeline).with_options(cs_opts).await?,
+        };
+        Ok::<_, mongodb::error::Error>(typed.with_type::<Document>())
     })?;
 
     let id = NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed);
@@ -113,9 +134,10 @@ pub fn next(stream_id: u64, timeout_ms: u64) -> Result<Option<Document>, String>
         let mut guard = stream.lock().await;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         loop {
+            // The event is already a raw Document (see SharedStream) — all
+            // server-sent fields are preserved (#63, #64).
             if let Some(event) = guard.next_if_any().await? {
-                let doc = bson::to_document(&event).map_err(mongodb::error::Error::custom)?;
-                return Ok::<_, mongodb::error::Error>(Some(doc));
+                return Ok::<_, mongodb::error::Error>(Some(event));
             }
             if Instant::now() >= deadline {
                 return Ok(None);
