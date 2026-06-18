@@ -80,9 +80,40 @@ class Database implements Stringable
 
     public function createCollection(string $collectionName, array $options = []): array
     {
-        zealphp_mongodb_create_collection($this->poolId, $this->databaseName, $collectionName);
+        // No options: native fast path. With options, route through the `create`
+        // command so capped/size/max/validator/timeseries/... actually apply —
+        // they were previously dropped entirely (#31).
+        if ($options === []) {
+            zealphp_mongodb_create_collection($this->poolId, $this->databaseName, $collectionName);
 
-        return ['ok' => 1];
+            return ['ok' => 1];
+        }
+
+        $cmd = ['create' => $collectionName];
+        $passthrough = [
+            'capped',
+            'size',
+            'max',
+            'validator',
+            'validationLevel',
+            'validationAction',
+            'timeseries',
+            'expireAfterSeconds',
+            'clusteredIndex',
+            'collation',
+            'changeStreamPreAndPostImages',
+            'viewOn',
+            'pipeline',
+        ];
+        foreach ($passthrough as $key) {
+            if (! isset($options[$key])) {
+                continue;
+            }
+
+            $cmd[$key] = $options[$key];
+        }
+
+        return $this->command($cmd);
     }
 
     public function dropCollection(string $collectionName, array $options = []): array
