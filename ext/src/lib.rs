@@ -88,6 +88,7 @@ fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions 
         if !z.is_null() {
             if let Some(arr) = z.array() {
                 if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { uo.upsert = Some(b); } }
+                if let Some(v) = arr.get("arrayFilters") { if let Ok(f) = bson_convert::php_to_pipeline(v) { uo.array_filters = Some(f); } }
             }
         }
     }
@@ -118,6 +119,8 @@ fn parse_find_one_and_update_options(opts: Option<&Zval>) -> mongodb::options::F
                 }
                 if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
                 if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { fo.upsert = Some(b); } }
+                if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
+                if let Some(v) = arr.get("arrayFilters") { if let Ok(f) = bson_convert::php_to_pipeline(v) { fo.array_filters = Some(f); } }
             }
         }
     }
@@ -135,6 +138,8 @@ fn parse_find_one_and_replace_options(opts: Option<&Zval>) -> mongodb::options::
                     }
                 }
                 if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { fo.upsert = Some(b); } }
+                if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
+                if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
             }
         }
     }
