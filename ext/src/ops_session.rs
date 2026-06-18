@@ -61,12 +61,12 @@ pub fn aggregate_all(
 }
 
 pub fn insert_one(
-    client: &Client, db: &str, col: &str, doc: Document, session: SharedSession,
+    client: &Client, db: &str, col: &str, doc: Document, opts: mongodb::options::InsertOneOptions, session: SharedSession,
 ) -> Result<mongodb::results::InsertOneResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move {
         let mut guard = session.lock().await;
-        collection.insert_one(doc).session(&mut *guard).await
+        collection.insert_one(doc).with_options(opts).session(&mut *guard).await
     })
 }
 
