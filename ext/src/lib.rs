@@ -54,6 +54,15 @@ pub fn zealphp_mongodb_list_databases(pool_id: i64) -> PhpResult<Zval> {
 
 // --- Options parsing helpers ---
 
+/// Deserialize a `collation` option document into mongodb's Collation struct.
+/// The PHP layer passes the standard collation keys (locale, strength, …), which
+/// map straight onto Collation via serde. Previously dropped on every op (#7).
+fn parse_collation(arr: &ZendHashTable) -> Option<mongodb::options::Collation> {
+    let v = arr.get("collation")?;
+    let doc = bson_convert::php_to_doc(v).ok()?;
+    bson::from_document::<mongodb::options::Collation>(doc).ok()
+}
+
 fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
     let mut fo = mongodb::options::FindOptions::default();
     if let Some(z) = opts {
@@ -68,6 +77,7 @@ fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
                 if let Some(v) = arr.get("min") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.min = Some(d); } }
                 if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
                 if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
+                if let Some(c) = parse_collation(arr) { fo.collation = Some(c); }
             }
         }
     }
@@ -86,6 +96,7 @@ fn parse_find_one_options(opts: Option<&Zval>) -> mongodb::options::FindOneOptio
                 if let Some(v) = arr.get("min") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.min = Some(d); } }
                 if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
                 if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
+                if let Some(c) = parse_collation(arr) { fo.collation = Some(c); }
             }
         }
     }
@@ -99,6 +110,7 @@ fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions 
             if let Some(arr) = z.array() {
                 if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { uo.upsert = Some(b); } }
                 if let Some(v) = arr.get("arrayFilters") { if let Ok(f) = bson_convert::php_to_pipeline(v) { uo.array_filters = Some(f); } }
+                if let Some(c) = parse_collation(arr) { uo.collation = Some(c); }
             }
         }
     }
@@ -131,6 +143,7 @@ fn parse_find_one_and_update_options(opts: Option<&Zval>) -> mongodb::options::F
                 if let Some(v) = arr.get("upsert") { if let Some(b) = v.bool() { fo.upsert = Some(b); } }
                 if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
                 if let Some(v) = arr.get("arrayFilters") { if let Ok(f) = bson_convert::php_to_pipeline(v) { fo.array_filters = Some(f); } }
+                if let Some(c) = parse_collation(arr) { fo.collation = Some(c); }
             }
         }
     }
