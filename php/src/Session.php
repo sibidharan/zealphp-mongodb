@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use function function_exists;
+use function in_array;
 use function zealphp_mongodb_session_abort_transaction;
 use function zealphp_mongodb_session_cluster_time;
 use function zealphp_mongodb_session_commit_transaction;
@@ -48,6 +49,9 @@ class Session
 
     private string $transactionState = self::TRANSACTION_NONE;
 
+    /** @var array<string, mixed>|null */
+    private array|null $transactionOptions = null;
+
     private readonly int $sessionId;
 
     private bool $ended = false;
@@ -67,9 +71,23 @@ class Session
         $this->sessionId = zealphp_mongodb_session_start($this->poolId, $opts);
     }
 
-    /** Internal — the ext-side session registry handle, threaded through ops. */
+    /**
+     * Internal — the ext-side session registry handle, threaded through ops.
+     * Used by Collection::mapOptions() once per operation that rides this
+     * session, so it doubles as the transaction-state transition point that
+     * matches MongoDB\Driver\Session: the first op in a transaction moves
+     * `starting` -> `in_progress` (#20), and an op that reuses the session
+     * after a finished transaction resets the state to `none` (#62).
+     */
     public function getSessionId(): int
     {
+        if ($this->transactionState === self::TRANSACTION_STARTING) {
+            $this->transactionState = self::TRANSACTION_IN_PROGRESS;
+        } elseif (in_array($this->transactionState, [self::TRANSACTION_COMMITTED, self::TRANSACTION_ABORTED], true)) {
+            $this->transactionState = self::TRANSACTION_NONE;
+            $this->transactionOptions = null;
+        }
+
         return $this->sessionId;
     }
 
@@ -82,7 +100,10 @@ class Session
     {
         $this->assertNotEnded();
         zealphp_mongodb_session_start_transaction($this->sessionId, $options);
-        $this->transactionState = self::TRANSACTION_IN_PROGRESS;
+        // Official semantics: a freshly-started transaction is `starting` until
+        // its first operation runs (#20); the options are retained (#21).
+        $this->transactionState = self::TRANSACTION_STARTING;
+        $this->transactionOptions = $options;
     }
 
     public function commitTransaction(): void
@@ -112,7 +133,7 @@ class Session
 
     public function isInTransaction(): bool
     {
-        return $this->transactionState === self::TRANSACTION_IN_PROGRESS;
+        return in_array($this->transactionState, [self::TRANSACTION_STARTING, self::TRANSACTION_IN_PROGRESS], true);
     }
 
     public function getTransactionState(): string
@@ -122,7 +143,7 @@ class Session
 
     public function getTransactionOptions(): array|null
     {
-        return null;
+        return $this->transactionOptions;
     }
 
     /** Logical session id document ({"id": Binary(UUID)}), like the C driver. */
