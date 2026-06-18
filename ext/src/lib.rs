@@ -117,6 +117,18 @@ fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions 
     uo
 }
 
+fn parse_insert_one_options(opts: Option<&Zval>) -> mongodb::options::InsertOneOptions {
+    let mut io = mongodb::options::InsertOneOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                if let Some(v) = arr.get("bypassDocumentValidation") { if let Some(b) = v.bool() { io.bypass_document_validation = Some(b); } }
+            }
+        }
+    }
+    io
+}
+
 fn parse_insert_many_options(opts: Option<&Zval>) -> mongodb::options::InsertManyOptions {
     let mut io = mongodb::options::InsertManyOptions::default();
     if let Some(z) = opts {
@@ -533,9 +545,10 @@ pub fn zealphp_mongodb_insert_one(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let doc = bson_convert::php_to_doc(document).map_err(|e| PhpException::default(e))?;
+    let io_opts = parse_insert_one_options(opts);
     let result = match parse_session(opts)? {
-        Some(sess) => ops_session::insert_one(&client, db, col, doc, sess),
-        None => ops::insert_one(&client, db, col, doc),
+        Some(sess) => ops_session::insert_one(&client, db, col, doc, io_opts, sess),
+        None => ops::insert_one(&client, db, col, doc, io_opts),
     }
     .map_err(|e| PhpException::default(e))?;
 

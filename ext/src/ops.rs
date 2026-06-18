@@ -29,9 +29,10 @@ pub fn insert_one(
     db: &str,
     col: &str,
     doc: Document,
+    opts: mongodb::options::InsertOneOptions,
 ) -> Result<mongodb::results::InsertOneResult, String> {
     let collection = client.database(db).collection::<Document>(col);
-    coroutine::run_sync(async move { collection.insert_one(doc).await })
+    coroutine::run_sync(async move { collection.insert_one(doc).with_options(opts).await })
 }
 
 pub fn update_one(

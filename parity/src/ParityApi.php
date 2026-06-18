@@ -74,6 +74,7 @@ final class ParityApi
             'db_info' => $this->dbInfo($db),
             'collation' => $this->collationOp($db),
             'ordered' => $this->orderedOp($db),
+            'bypass_validation' => $this->bypassValidation($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -960,6 +961,46 @@ final class ParityApi
             'ordered_true_count' => $b->countDocuments([]),
             'has_3_false' => $a->countDocuments(['_id' => 3]),
             'has_3_true' => $b->countDocuments(['_id' => 3]),
+        ];
+    }
+
+    /**
+     * bypassDocumentValidation parity (cluster crud / #7): with a schema
+     * validator, an invalid insert is rejected, but bypassDocumentValidation
+     * lets it through. The option was dropped, so the bypass insert was rejected
+     * too.
+     */
+    private function bypassValidation(object $db): array
+    {
+        try {
+            $db->dropCollection('validated');
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $db->createCollection('validated', ['validator' => ['x' => ['$gte' => 0]]]);
+        $col = $db->selectCollection('validated');
+        $col->insertOne(['_id' => 1, 'x' => 5]);
+
+        $rejected = 'NO_THROW';
+        try {
+            $col->insertOne(['_id' => 2, 'x' => -1]);
+        } catch (\Throwable) {
+            $rejected = 'threw';
+        }
+
+        $bypassed = 'NO_THROW';
+        try {
+            $col->insertOne(['_id' => 3, 'x' => -1], ['bypassDocumentValidation' => true]);
+            $bypassed = 'inserted';
+        } catch (\Throwable) {
+            $bypassed = 'threw';
+        }
+
+        return [
+            'invalid_rejected' => $rejected,
+            'bypass_inserted' => $bypassed,
+            'count' => $col->countDocuments([]),
         ];
     }
 }
