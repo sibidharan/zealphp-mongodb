@@ -35,6 +35,11 @@ class BulkWriteResult
         return $this->result['upserted_count'] ?? 0;
     }
 
+    public function getInsertedIds(): array
+    {
+        return $this->result['inserted_ids'] ?? [];
+    }
+
     public function getUpsertedIds(): array
     {
         return $this->result['upserted_ids'] ?? [];

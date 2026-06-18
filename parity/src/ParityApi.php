@@ -60,6 +60,7 @@ final class ParityApi
             'int_types' => $this->intTypes($db),
             'write_results' => $this->writeResults($db),
             'insert_ids' => $this->insertIds($db),
+            'bulk_ids' => $this->bulkIds($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -471,6 +472,39 @@ final class ParityApi
             'id_2' => $ids[2] ?? null,
             'id_3' => $ids[3] ?? null,
             'id_4' => $ids[4] ?? null,
+        ];
+    }
+
+    /**
+     * bulkWrite result parity (cluster C4 / #9): inserted/upserted counts and
+     * ids (keyed by operation index) must be reported, and getInsertedIds()
+     * must exist (it was a fatal undefined-method Error).
+     */
+    private function bulkIds(object $db): array
+    {
+        $col = $db->selectCollection('bwres');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 'existing', 'v' => 0]);
+        $res = $col->bulkWrite([
+            ['insertOne' => [['_id' => 'ins-1', 'v' => 1]]],
+            ['updateOne' => [['_id' => 'up-1'], ['$set' => ['v' => 2]], ['upsert' => true]]],
+            ['updateOne' => [['_id' => 'existing'], ['$set' => ['v' => 9]]]],
+            ['deleteOne' => [['_id' => 'existing']]],
+        ]);
+
+        return [
+            'inserted_count' => $res->getInsertedCount(),
+            'upserted_count' => $res->getUpsertedCount(),
+            'matched_count' => $res->getMatchedCount(),
+            'modified_count' => $res->getModifiedCount(),
+            'deleted_count' => $res->getDeletedCount(),
+            'inserted_ids' => $res->getInsertedIds(),
+            'upserted_ids' => $res->getUpsertedIds(),
         ];
     }
 }

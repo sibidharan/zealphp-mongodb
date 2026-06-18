@@ -322,36 +322,45 @@ class Collection
 
     public function bulkWrite(array $operations, array $options = []): BulkWriteResult
     {
-        $results = ['inserted_count' => 0, 'matched_count' => 0, 'modified_count' => 0, 'deleted_count' => 0, 'upserted_count' => 0, 'acknowledged' => true];
+        $results = [
+            'inserted_count' => 0,
+            'matched_count' => 0,
+            'modified_count' => 0,
+            'deleted_count' => 0,
+            'upserted_count' => 0,
+            'inserted_ids' => [],
+            'upserted_ids' => [],
+            'acknowledged' => true,
+        ];
+
+        // Both inserted_ids and upserted_ids are keyed by the operation's index
+        // in $operations, matching the official BulkWriteResult (#9).
+        $index = -1;
         foreach ($operations as $op) {
             foreach ($op as $type => $args) {
+                $index++;
                 match ($type) {
-                    'insertOne' => (function () use (&$results, $args) {
-                        $this->insertOne($args[0] ?? $args);
+                    'insertOne' => (function () use (&$results, $args, $index): void {
+                        $r = $this->insertOne($args[0] ?? $args);
                         $results['inserted_count']++;
+                        $results['inserted_ids'][$index] = $r->getInsertedId();
                     })(),
-                    'updateOne' => (function () use (&$results, $args) {
-                        $r = $this->updateOne($args[0], $args[1], $args[2] ?? []);
-                        $results['matched_count'] += $r->getMatchedCount();
-                        $results['modified_count'] += $r->getModifiedCount();
+                    'updateOne' => (function () use (&$results, $args, $index): void {
+                        $this->accumulateUpdate($results, $this->updateOne($args[0], $args[1], $args[2] ?? []), $index);
                     })(),
-                    'updateMany' => (function () use (&$results, $args) {
-                        $r = $this->updateMany($args[0], $args[1], $args[2] ?? []);
-                        $results['matched_count'] += $r->getMatchedCount();
-                        $results['modified_count'] += $r->getModifiedCount();
+                    'updateMany' => (function () use (&$results, $args, $index): void {
+                        $this->accumulateUpdate($results, $this->updateMany($args[0], $args[1], $args[2] ?? []), $index);
                     })(),
-                    'deleteOne' => (function () use (&$results, $args) {
+                    'deleteOne' => (function () use (&$results, $args): void {
                         $r = $this->deleteOne($args[0], $args[1] ?? []);
                         $results['deleted_count'] += $r->getDeletedCount();
                     })(),
-                    'deleteMany' => (function () use (&$results, $args) {
+                    'deleteMany' => (function () use (&$results, $args): void {
                         $r = $this->deleteMany($args[0], $args[1] ?? []);
                         $results['deleted_count'] += $r->getDeletedCount();
                     })(),
-                    'replaceOne' => (function () use (&$results, $args) {
-                        $r = $this->replaceOne($args[0], $args[1], $args[2] ?? []);
-                        $results['matched_count'] += $r->getMatchedCount();
-                        $results['modified_count'] += $r->getModifiedCount();
+                    'replaceOne' => (function () use (&$results, $args, $index): void {
+                        $this->accumulateUpdate($results, $this->replaceOne($args[0], $args[1], $args[2] ?? []), $index);
                     })(),
                     default => null,
                 };
@@ -359,6 +368,24 @@ class Collection
         }
 
         return new BulkWriteResult($results);
+    }
+
+    /**
+     * Fold an UpdateResult (updateOne/updateMany/replaceOne) into the running
+     * bulkWrite totals, recording an upserted id at the operation index (#9).
+     *
+     * @param array<string, mixed> $results
+     */
+    private function accumulateUpdate(array &$results, UpdateResult $r, int $index): void
+    {
+        $results['matched_count'] += $r->getMatchedCount();
+        $results['modified_count'] += $r->getModifiedCount();
+        if ($r->getUpsertedCount() <= 0) {
+            return;
+        }
+
+        $results['upserted_count'] += $r->getUpsertedCount();
+        $results['upserted_ids'][$index] = $r->getUpsertedId();
     }
 
     public function drop(array $options = []): array
