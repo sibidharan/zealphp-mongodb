@@ -76,6 +76,7 @@ final class ParityApi
             'ordered' => $this->orderedOp($db),
             'bypass_validation' => $this->bypassValidation($db),
             'wc_ack' => $this->wcAck($db),
+            'cs_fields' => $this->changeStreamFields($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1032,5 +1033,64 @@ final class ParityApi
             'update_w0_ack' => $updW0->isAcknowledged(),
             'delete_w0_ack' => $delW0->isAcknowledged(),
         ];
+    }
+
+    /**
+     * Change-stream event-shape parity (cluster changestreams / #24, #63, #64):
+     * a pipeline that ADDS a field keeps it; fullDocumentBeforeChange delivers
+     * the pre-image; and a $replaceRoot removing operationType is delivered
+     * (not a deserialize error). Requires a pre-image-enabled collection.
+     */
+    private function changeStreamFields(object $db): array
+    {
+        try {
+            $db->dropCollection('cs2');
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $db->createCollection('cs2', ['changeStreamPreAndPostImages' => ['enabled' => true]]);
+        $col = $db->selectCollection('cs2');
+        $col->insertOne(['_id' => 1, 'v' => 'orig']);
+
+        $s1 = $col->watch(
+            [['$match' => ['operationType' => 'update']], ['$addFields' => ['custom' => 'TAG']]],
+            ['maxAwaitTimeMS' => 300, 'fullDocument' => 'updateLookup', 'fullDocumentBeforeChange' => 'whenAvailable'],
+        );
+        $s1->rewind();
+        $col->updateOne(['_id' => 1], ['$set' => ['v' => 'new']]);
+        $ev1 = $this->awaitEvent($s1);
+
+        // A $project that removes operationType (but keeps the _id resume token)
+        // must still deliver the event, not raise a deserialize error (#63).
+        $s2 = $col->watch(
+            [['$match' => ['operationType' => 'insert']], ['$project' => ['operationType' => 0]]],
+            ['maxAwaitTimeMS' => 300],
+        );
+        $s2->rewind();
+        $col->insertOne(['_id' => 2, 'v' => 'y']);
+        $ev2 = $this->awaitEvent($s2);
+
+        return [
+            'custom_field' => $ev1['custom'] ?? null,
+            'before_v' => $ev1['fullDocumentBeforeChange']['v'] ?? null,
+            'after_v' => $ev1['fullDocument']['v'] ?? null,
+            'reshaped_delivered' => $ev2 !== null,
+            'reshaped_has_op' => isset($ev2['operationType']),
+            'reshaped_has_documentkey' => isset($ev2['documentKey']),
+        ];
+    }
+
+    private function awaitEvent(object $stream): mixed
+    {
+        $deadline = \microtime(true) + 8.0;
+        while (\microtime(true) < $deadline) {
+            $stream->next();
+            if ($stream->valid()) {
+                return $stream->current();
+            }
+        }
+
+        return null;
     }
 }

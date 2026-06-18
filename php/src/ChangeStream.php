@@ -80,7 +80,7 @@ class ChangeStream implements Iterator
 
         $pipeline = (array) Collection::prepareBSON($pipeline);
         $opts = [];
-        foreach (['fullDocument', 'maxAwaitTimeMS', 'batchSize'] as $k) {
+        foreach (['fullDocument', 'fullDocumentBeforeChange', 'showExpandedEvents', 'maxAwaitTimeMS', 'batchSize'] as $k) {
             if (! isset($options[$k])) {
                 continue;
             }

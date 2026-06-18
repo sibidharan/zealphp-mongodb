@@ -307,14 +307,30 @@ pub fn zealphp_mongodb_watch(
 
     let mut watch_opts = change_stream::WatchOptions {
         full_document: None,
+        full_document_before_change: None,
         resume_after: None,
         start_after: None,
+        start_at_operation_time: None,
+        show_expanded_events: None,
         max_await_time_ms: None,
         batch_size: None,
     };
     if let Some(arr) = opts.and_then(|z| z.array()) {
         if let Some(v) = arr.get("fullDocument") {
             watch_opts.full_document = v.str().map(str::to_string);
+        }
+        if let Some(v) = arr.get("fullDocumentBeforeChange") {
+            watch_opts.full_document_before_change = v.str().map(str::to_string);
+        }
+        if let Some(v) = arr.get("showExpandedEvents") {
+            watch_opts.show_expanded_events = v.bool();
+        }
+        if let Some(v) = arr.get("startAtOperationTime") {
+            if let Ok(d) = bson_convert::php_to_doc(v) {
+                let t = d.get_i64("t").map(|n| n as u32).or_else(|_| d.get_i32("t").map(|n| n as u32)).unwrap_or(0);
+                let i = d.get_i64("i").map(|n| n as u32).or_else(|_| d.get_i32("i").map(|n| n as u32)).unwrap_or(0);
+                watch_opts.start_at_operation_time = Some(bson::Timestamp { time: t, increment: i });
+            }
         }
         if let Some(v) = arr.get("resumeAfter") {
             if let Ok(d) = bson_convert::php_to_doc(v) {
