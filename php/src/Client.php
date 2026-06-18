@@ -8,13 +8,23 @@ use Stringable;
 
 use function array_map;
 use function array_merge;
+use function function_exists;
 use function is_array;
 use function zealphp_mongodb_close;
 use function zealphp_mongodb_connect;
 use function zealphp_mongodb_drop_database;
+use function zealphp_mongodb_version;
 
 class Client implements Stringable
 {
+    /**
+     * The zealphp/mongodb PHP-library version. Lets an app answer "which
+     * version am I running?" at runtime and detect a lib/ext mismatch — the
+     * native ext build advertised its own (possibly skewed) version with no
+     * library-side counterpart before (#71).
+     */
+    public const VERSION = '0.4.0';
+
     private readonly int $poolId;
 
     public function __construct(string|null $uri = 'mongodb://localhost:27017', array $uriOptions = [], array $driverOptions = [])
@@ -25,6 +35,20 @@ class Client implements Stringable
     public function __get(string $name): Database
     {
         return $this->selectDatabase($name);
+    }
+
+    /**
+     * Both the PHP library version and the loaded native ext version, so a
+     * lib/ext skew is observable at runtime (#71).
+     *
+     * @return array{library: string, extension: string|null}
+     */
+    public function getVersions(): array
+    {
+        return [
+            'library' => self::VERSION,
+            'extension' => function_exists('zealphp_mongodb_version') ? zealphp_mongodb_version() : null,
+        ];
     }
 
     public function selectDatabase(string $databaseName, array $options = []): Database
