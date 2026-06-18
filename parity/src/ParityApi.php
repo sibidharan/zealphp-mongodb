@@ -58,6 +58,7 @@ final class ParityApi
             'errors' => $this->errors($db),
             'options' => $this->options($db),
             'int_types' => $this->intTypes($db),
+            'write_results' => $this->writeResults($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -406,6 +407,36 @@ final class ParityApi
             'small_is_long' => $col->countDocuments(['small' => ['$type' => 'long']]),
             'big_is_int' => $col->countDocuments(['big' => ['$type' => 'int']]),
             'big_is_long' => $col->countDocuments(['big' => ['$type' => 'long']]),
+        ];
+    }
+
+    /**
+     * Write-result parity (cluster C4 / #8): an upsert must report
+     * getUpsertedCount()===1 and getUpsertedId()===<_id>; a matching update
+     * reports upsertedCount 0 + matched/modified 1. An explicit string _id
+     * keeps the upserted id deterministic across both drivers.
+     */
+    private function writeResults(object $db): array
+    {
+        $col = $db->selectCollection('wres');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $up1 = $col->updateOne(['_id' => 'wr-upsert'], ['$set' => ['v' => 1]], ['upsert' => true]);
+        $up2 = $col->updateOne(['_id' => 'wr-upsert'], ['$set' => ['v' => 2]], ['upsert' => true]);
+
+        return [
+            'up1_upserted_count' => $up1->getUpsertedCount(),
+            'up1_upserted_id' => $up1->getUpsertedId(),
+            'up1_matched' => $up1->getMatchedCount(),
+            'up1_modified' => $up1->getModifiedCount(),
+            'up2_upserted_count' => $up2->getUpsertedCount(),
+            'up2_upserted_id' => $up2->getUpsertedId(),
+            'up2_matched' => $up2->getMatchedCount(),
+            'up2_modified' => $up2->getModifiedCount(),
         ];
     }
 }
