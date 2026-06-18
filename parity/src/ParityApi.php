@@ -61,6 +61,7 @@ final class ParityApi
             'write_results' => $this->writeResults($db),
             'insert_ids' => $this->insertIds($db),
             'bulk_ids' => $this->bulkIds($db),
+            'find_opts' => $this->findOpts($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -505,6 +506,34 @@ final class ParityApi
             'deleted_count' => $res->getDeletedCount(),
             'inserted_ids' => $res->getInsertedIds(),
             'upserted_ids' => $res->getUpsertedIds(),
+        ];
+    }
+
+    /**
+     * find() option parity (cluster C2 / #47): returnKey returns only the index
+     * key (no _id / non-indexed fields); showRecordId injects $recordId. Both
+     * were silently dropped. ($recordId VALUE is storage-internal and differs
+     * per deployment, so only its presence is compared.)
+     */
+    private function findOpts(object $db): array
+    {
+        $col = $db->selectCollection('findopts');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertMany([['a' => 1, 'b' => 10], ['a' => 2, 'b' => 20]]);
+        $col->createIndex(['a' => 1]);
+
+        $rk = $col->find(['a' => ['$gte' => 1]], ['returnKey' => true, 'sort' => ['a' => 1]])->toArray();
+        $sr = $col->findOne(['a' => 1], ['showRecordId' => true]);
+
+        return [
+            'return_key_first_keys' => isset($rk[0]) ? \array_keys((array) $rk[0]) : null,
+            'return_key_count' => \count($rk),
+            'show_record_id_present' => isset($sr['$recordId']),
         ];
     }
 }
