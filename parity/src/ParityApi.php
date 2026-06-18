@@ -65,6 +65,7 @@ final class ParityApi
             'index_spec' => $this->indexSpec($db),
             'list_filter' => $this->listFilter($db),
             'index_flags' => $this->indexFlags($db),
+            'empty_shapes' => $this->emptyShapes($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -633,6 +634,51 @@ final class ParityApi
             'geo' => $flags['geo'] ?? null,
             'text' => $flags['txt_idx'] ?? null,
             'empty_bulk' => $emptyBulk,
+        ];
+    }
+
+    /**
+     * Empty-document shape parity (cluster BSON / #53): an empty BSON document
+     * must read back as a BSONDocument ({}), and an empty array as a BSONArray
+     * ([]). The server emits both via aggregation so this exercises the READ
+     * path on identical stored/computed values.
+     */
+    private function emptyShapes(object $db): array
+    {
+        $col = $db->selectCollection('emptyshapes');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        // Store an explicit empty sub-document and empty array.
+        $col->insertOne(['_id' => 1, 'd' => (object) [], 'a' => [], 'nest' => ['inner' => (object) []]]);
+        $stored = $col->findOne(['_id' => 1]);
+
+        // Have the server COMPUTE an empty document: $filter (cond:false) over a
+        // non-empty input yields [], and $arrayToObject of [] yields {}. No
+        // empty client-side literal is involved, so this is a pure READ test.
+        $agg = $col->aggregate([
+            ['$match' => ['_id' => 1]],
+            ['$project' => [
+                'computed' => [
+                    '$arrayToObject' => [
+                        '$filter' => ['input' => [['k' => 'x', 'v' => 1]], 'cond' => false],
+                    ],
+                ],
+            ]],
+        ])->toArray();
+        $computed = $agg[0] ?? null;
+
+        $isDoc = static fn ($v): bool => $v instanceof \MongoDB\Model\BSONDocument;
+        $isArr = static fn ($v): bool => $v instanceof \MongoDB\Model\BSONArray;
+
+        return [
+            'stored_d_is_document' => $isDoc($stored['d'] ?? null),
+            'stored_a_is_array' => $isArr($stored['a'] ?? null),
+            'stored_nested_inner_is_document' => $isDoc(($stored['nest'] ?? new \stdClass())['inner'] ?? null),
+            'computed_is_document' => $isDoc($computed['computed'] ?? null),
         ];
     }
 }

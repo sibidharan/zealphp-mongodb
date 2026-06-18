@@ -25,12 +25,14 @@ thread_local! {
     static CE_UTCDATETIME: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     static CE_REGEX: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     static CE_BSONARRAY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_BSONDOCUMENT: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     // Tracks whether we've attempted lookup (so we don't retry on failure)
     static CE_DOCUMENT_TRIED: Cell<bool> = Cell::new(false);
     static CE_OBJECTID_TRIED: Cell<bool> = Cell::new(false);
     static CE_UTCDATETIME_TRIED: Cell<bool> = Cell::new(false);
     static CE_REGEX_TRIED: Cell<bool> = Cell::new(false);
     static CE_BSONARRAY_TRIED: Cell<bool> = Cell::new(false);
+    static CE_BSONDOCUMENT_TRIED: Cell<bool> = Cell::new(false);
 }
 
 fn get_ce_cached(
@@ -76,6 +78,22 @@ fn get_ce_bsonarray() -> Option<&'static ClassEntry> {
     get_ce_cached(&CE_BSONARRAY, &CE_BSONARRAY_TRIED, "MongoDB\\Model\\BSONArray")
 }
 
+fn get_ce_bsondocument() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_BSONDOCUMENT, &CE_BSONDOCUMENT_TRIED, "MongoDB\\Model\\BSONDocument")
+}
+
+/// An empty BSON document must stay distinguishable from an empty array once it
+/// reaches PHP — both would otherwise collapse to `[]`, and the PHP wrapper maps
+/// `[]` (array_is_list) to BSONArray, losing the `{}` shape (#53). Returning a
+/// real (empty) MongoDB\Model\BSONDocument here keeps the document shape; the
+/// PHP wrapDoc() passes objects through untouched.
+fn make_empty_bson_document() -> Option<Zval> {
+    let ce = get_ce_bsondocument()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", Vec::<&dyn ext_php_rs::convert::IntoZvalDyn>::new()).ok()?;
+    obj.into_zval(false).ok()
+}
+
 fn make_object_id(hex: &str) -> Option<Zval> {
     let ce = get_ce_objectid()?;
     let obj = ce.new();
@@ -101,6 +119,16 @@ fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
 }
 
 fn wrap_as_document(ht: ZBox<ZendHashTable>) -> Zval {
+    // An empty document round-trips as an empty array otherwise, which the PHP
+    // wrapper would treat as a BSONArray (#53). Emit a real empty BSONDocument
+    // so the `{}` shape survives. Falls back to the plain array if the class
+    // isn't loaded.
+    if ht.len() == 0 {
+        if let Some(z) = make_empty_bson_document() {
+            return z;
+        }
+    }
+
     let mut zval = Zval::new();
     zval.set_hashtable(ht);
     zval
