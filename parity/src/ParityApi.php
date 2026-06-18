@@ -70,6 +70,7 @@ final class ParityApi
             'create_coll' => $this->createColl($db),
             'drop_index_info' => $this->dropIndexInfo($db),
             'pipeline_update' => $this->pipelineUpdate($db),
+            'type_map' => $this->typeMapOp($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -828,6 +829,43 @@ final class ParityApi
             'c' => $doc['c'] ?? null,
             'b_present' => isset($doc['b']),
             'foau_y' => $r['y'] ?? null,
+        ];
+    }
+
+    /**
+     * typeMap parity (cluster errors-options / #40): the `typeMap` option must
+     * re-shape findOne results (root/document/array) into plain arrays, stdClass
+     * objects, or the default BSONDocument/BSONArray — while value objects
+     * (ObjectId, …) pass through untouched.
+     */
+    private function typeMapOp(object $db): array
+    {
+        $col = $db->selectCollection('typemap');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne([
+            '_id' => 1,
+            'nested' => ['a' => 1],
+            'list' => [1, 2],
+            'oid' => new \MongoDB\BSON\ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa'),
+        ]);
+
+        $asArray = $col->findOne(['_id' => 1], ['typeMap' => ['root' => 'array', 'document' => 'array', 'array' => 'array']]);
+        $asObject = $col->findOne(['_id' => 1], ['typeMap' => ['root' => 'object', 'document' => 'object', 'array' => 'array']]);
+        $default = $col->findOne(['_id' => 1]);
+
+        return [
+            'array_root_is_plain' => \is_array($asArray),
+            'array_nested_is_plain' => \is_array($asArray['nested'] ?? null),
+            'array_list_is_plain' => \is_array($asArray['list'] ?? null),
+            'array_oid_preserved' => ($asArray['oid'] ?? null) instanceof \MongoDB\BSON\ObjectId,
+            'object_root_is_stdclass' => $asObject instanceof \stdClass,
+            'object_nested_is_stdclass' => ($asObject->nested ?? null) instanceof \stdClass,
+            'default_root_is_bsondoc' => $default instanceof \MongoDB\Model\BSONDocument,
         ];
     }
 }

@@ -154,15 +154,22 @@ class Collection
         }
     }
 
-    public function findOne(array|object $filter = [], array $options = []): BSONDocument|Document|array|null
+    public function findOne(array|object $filter = [], array $options = []): array|object|null
     {
         self::validateQueryTypeOptions($options);
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        $wrapped = is_array($result) ? self::wrapDoc($result) : $result;
 
-        return is_array($result) ? self::wrapDoc($result) : $result;
+        // Apply a per-operation or collection-level typeMap to the result (#40).
+        $typeMap = $options['typeMap'] ?? $this->options['typeMap'] ?? null;
+        if ($wrapped !== null && $typeMap !== null) {
+            return self::applyTypeMap($wrapped, $typeMap);
+        }
+
+        return $wrapped;
     }
 
     public function find(array|object $filter = [], array $options = []): Cursor|ArrayCursor
@@ -508,6 +515,58 @@ class Collection
     public function getTypeMap(): array
     {
         return ['root' => BSONDocument::class, 'document' => BSONDocument::class, 'array' => BSONArray::class];
+    }
+
+    /**
+     * Re-shape a wrapped result according to a `typeMap` option (#40). The
+     * default produces BSONDocument/BSONArray; a caller can ask for `array`
+     * (plain arrays), `object` (stdClass), or a class name per the root /
+     * document / array slots, exactly like the official driver. Value objects
+     * (ObjectId, UTCDateTime, …) always pass through unchanged.
+     *
+     * @param array<string, string> $typeMap
+     */
+    private static function applyTypeMap(mixed $wrapped, array $typeMap): mixed
+    {
+        return self::convertContainers($wrapped, $typeMap, true);
+    }
+
+    /** @param array<string, string> $typeMap */
+    private static function convertContainers(mixed $value, array $typeMap, bool $isRoot): mixed
+    {
+        if ($value instanceof BSONArray) {
+            $items = array_map(
+                static fn ($v) => self::convertContainers($v, $typeMap, false),
+                $value->getArrayCopy(),
+            );
+
+            return self::toTypeMapType($typeMap['array'] ?? BSONArray::class, $items, true);
+        }
+
+        if ($value instanceof BSONDocument) {
+            $fields = [];
+            foreach ($value as $key => $v) {
+                $fields[$key] = self::convertContainers($v, $typeMap, false);
+            }
+
+            $type = $isRoot ? ($typeMap['root'] ?? BSONDocument::class) : ($typeMap['document'] ?? BSONDocument::class);
+
+            return self::toTypeMapType($type, $fields, false);
+        }
+
+        return $value;
+    }
+
+    /** @param array<array-key, mixed> $data */
+    private static function toTypeMapType(string $type, array $data, bool $isArray): mixed
+    {
+        return match ($type) {
+            'array' => $data,
+            'object', 'stdClass' => (object) $data,
+            BSONArray::class => new BSONArray($data),
+            BSONDocument::class => $isArray ? new BSONArray($data) : new BSONDocument($data),
+            default => new $type($data),
+        };
     }
 
     /** @return array<string, mixed> */
