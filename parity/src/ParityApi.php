@@ -56,6 +56,7 @@ final class ParityApi
             'change_stream' => $this->changeStream($db->selectCollection('cs')),
             'gridfs' => $this->gridfs($db),
             'errors' => $this->errors($db),
+            'options' => $this->options($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -340,5 +341,46 @@ final class ParityApi
 
             return $info;
         }
+    }
+
+    /**
+     * Operation-option parity (cluster C2): options the PHP layer forwards must
+     * actually reach the server. `sort` on findOneAndUpdate must pick the
+     * highest-`a` doc (not natural-order first); `arrayFilters` must resolve
+     * the positional `$[e]` identifier (otherwise the server rejects the op).
+     */
+    private function options(object $db): array
+    {
+        $col = $db->selectCollection('opts');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertMany([
+            ['_id' => 5, 'a' => 10],
+            ['_id' => 2, 'a' => 50],
+            ['_id' => 9, 'a' => 30],
+        ]);
+
+        // sort {a:-1} => the _id=2 doc (highest a) is the one selected/updated.
+        $sorted = $col->findOneAndUpdate([], ['$set' => ['hit' => 1]], ['sort' => ['a' => -1], 'returnDocument' => 2]);
+
+        // arrayFilters: set every grade >= 85 to 100 => [80, 100, 100].
+        $col->insertOne(['_id' => 100, 'grades' => [80, 85, 90]]);
+        $col->updateOne(
+            ['_id' => 100],
+            ['$set' => ['grades.$[e]' => 100]],
+            ['arrayFilters' => [['e' => ['$gte' => 85]]]],
+        );
+        $afDoc = $col->findOne(['_id' => 100]);
+
+        return [
+            'sort_selected_id' => $sorted['_id'] ?? null,
+            'sort_selected_a' => $sorted['a'] ?? null,
+            'sort_selected_hit' => $sorted['hit'] ?? null,
+            'array_filters_grades' => $afDoc['grades'] ?? null,
+        ];
     }
 }
