@@ -535,7 +535,7 @@ pub fn zealphp_mongodb_update_one(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update_modifications(update).map_err(|e| PhpException::default(e))?;
     let uo = parse_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::update_one(&client, db, col, filter_doc, update_doc, uo, sess),
@@ -556,7 +556,7 @@ pub fn zealphp_mongodb_update_many(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update_modifications(update).map_err(|e| PhpException::default(e))?;
     let uo = parse_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::update_many(&client, db, col, filter_doc, update_doc, uo, sess),
@@ -695,7 +695,7 @@ pub fn zealphp_mongodb_find_one_and_update(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update_modifications(update).map_err(|e| PhpException::default(e))?;
     let fo = parse_find_one_and_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::find_one_and_update(&client, db, col, filter_doc, update_doc, fo, sess),

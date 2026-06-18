@@ -69,6 +69,7 @@ final class ParityApi
             'txn_state' => $this->txnState($db),
             'create_coll' => $this->createColl($db),
             'drop_index_info' => $this->dropIndexInfo($db),
+            'pipeline_update' => $this->pipelineUpdate($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -792,5 +793,41 @@ final class ParityApi
         \sort($namesAfter);
 
         return ['names_after_drop' => $namesAfter];
+    }
+
+    /**
+     * Aggregation-pipeline update parity (cluster crud / #46): an update given
+     * as a LIST of stages (MongoDB 4.2+) must be sent as a pipeline, not
+     * serialized into a {"0":…} document the server rejects.
+     */
+    private function pipelineUpdate(object $db): array
+    {
+        $col = $db->selectCollection('pipeupd');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'a' => 5, 'b' => 10]);
+        $col->updateOne(['_id' => 1], [
+            ['$set' => ['c' => ['$add' => ['$a', '$b']]]],
+            ['$unset' => ['b']],
+        ]);
+        $doc = $col->findOne(['_id' => 1]);
+
+        $col->insertOne(['_id' => 2, 'x' => 3]);
+        $r = $col->findOneAndUpdate(
+            ['_id' => 2],
+            [['$set' => ['y' => ['$multiply' => ['$x', 2]]]]],
+            ['returnDocument' => 2],
+        );
+
+        return [
+            'a' => $doc['a'] ?? null,
+            'c' => $doc['c'] ?? null,
+            'b_present' => isset($doc['b']),
+            'foau_y' => $r['y'] ?? null,
+        ];
     }
 }
