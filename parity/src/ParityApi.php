@@ -78,6 +78,7 @@ final class ParityApi
             'wc_ack' => $this->wcAck($db),
             'cs_fields' => $this->changeStreamFields($db),
             'cs_invalidate' => $this->changeStreamInvalidate($db),
+            'aggregate_opts' => $this->aggregateOpts($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1143,6 +1144,37 @@ final class ParityApi
         return [
             'saw_invalidate' => $sawInvalidate,
             'threw_after' => $threwAfter,
+        ];
+    }
+
+    /**
+     * Aggregate option parity (cluster aggregation / #15): collation must make a
+     * $match case-insensitive, and `let` must bind $$vars the pipeline reads —
+     * both were dropped (collation found nothing; let made $$var undefined).
+     */
+    private function aggregateOpts(object $db): array
+    {
+        $col = $db->selectCollection('aggopts');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertMany([['_id' => 1, 'name' => 'Hello'], ['_id' => 2, 'name' => 'WORLD']]);
+        $ci = ['locale' => 'en', 'strength' => 2];
+
+        $withColl = $col->aggregate([['$match' => ['name' => 'hello']]], ['collation' => $ci])->toArray();
+        $noColl = $col->aggregate([['$match' => ['name' => 'hello']]])->toArray();
+        $withLet = $col->aggregate(
+            [['$match' => ['$expr' => ['$gt' => ['$_id', '$$minId']]]]],
+            ['let' => ['minId' => 1]],
+        )->toArray();
+
+        return [
+            'collation_count' => \count($withColl),
+            'no_collation_count' => \count($noColl),
+            'let_count' => \count($withLet),
         ];
     }
 }
