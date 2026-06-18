@@ -63,6 +63,7 @@ final class ParityApi
             'bulk_ids' => $this->bulkIds($db),
             'find_opts' => $this->findOpts($db),
             'index_spec' => $this->indexSpec($db),
+            'list_filter' => $this->listFilter($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -567,6 +568,31 @@ final class ParityApi
             'ttl_expire' => $byName['ttl_idx']['expireAfterSeconds'] ?? 'MISSING',
             'partial_present' => isset($byName['partial_idx']['partialFilterExpression']) ? 'present' : 'MISSING',
             'hidden_flag' => $byName['hidden_idx']['hidden'] ?? 'MISSING',
+        ];
+    }
+
+    /**
+     * listCollectionNames filter parity (cluster admin / #34): the `filter`
+     * option must actually restrict the returned names instead of being
+     * dropped (every collection came back regardless).
+     */
+    private function listFilter(object $db): array
+    {
+        foreach (['alpha', 'beta', 'gamma'] as $c) {
+            $db->selectCollection($c)->insertOne(['_id' => 1]);
+        }
+
+        // Official listCollectionNames returns an Iterator, zeal an array;
+        // normalize both so the test targets the FILTER behaviour, not the
+        // return-container type.
+        $toArr = static fn ($v): array => \is_array($v) ? $v : \iterator_to_array($v);
+        $all = $toArr($db->listCollectionNames());
+        $filtered = $toArr($db->listCollectionNames(['filter' => ['name' => 'beta']]));
+        \sort($filtered);
+
+        return [
+            'all_contains' => \array_values(\array_intersect(['alpha', 'beta', 'gamma'], $all)),
+            'filtered' => \array_values($filtered),
         ];
     }
 }

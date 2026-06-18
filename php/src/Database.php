@@ -8,6 +8,7 @@ use Stringable;
 use Throwable;
 use ZealPHP\MongoDB\Exception\ErrorMapper;
 
+use function array_map;
 use function array_merge;
 use function zealphp_mongodb_create_collection;
 use function zealphp_mongodb_drop_collection;
@@ -101,6 +102,17 @@ class Database implements Stringable
     public function listCollections(array $options = []): array
     {
         $cmd = ['listCollections' => 1];
+        // Honor the `filter` option (and other listCollections options) the
+        // caller forwards — previously dropped, so every collection came back
+        // regardless of the filter (#34).
+        foreach (['filter', 'nameOnly', 'authorizedCollections', 'comment'] as $key) {
+            if (! isset($options[$key])) {
+                continue;
+            }
+
+            $cmd[$key] = $options[$key];
+        }
+
         $result = $this->command($cmd);
 
         return $result['cursor']['firstBatch'] ?? [];
@@ -108,7 +120,16 @@ class Database implements Stringable
 
     public function listCollectionNames(array $options = []): array
     {
-        return zealphp_mongodb_list_collection_names($this->poolId, $this->databaseName);
+        // The native fast path can't apply a filter; with no filter, use it.
+        if (! isset($options['filter'])) {
+            return zealphp_mongodb_list_collection_names($this->poolId, $this->databaseName);
+        }
+
+        // With a filter, route through the listCollections command so the
+        // filter actually restricts the names (#34).
+        $batch = $this->listCollections(array_merge($options, ['nameOnly' => true]));
+
+        return array_map(static fn ($c) => $c['name'], $batch);
     }
 
     public function modifyCollection(string $collectionName, array $collectionOptions, array $options = []): array
