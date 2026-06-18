@@ -77,6 +77,7 @@ final class ParityApi
             'bypass_validation' => $this->bypassValidation($db),
             'wc_ack' => $this->wcAck($db),
             'cs_fields' => $this->changeStreamFields($db),
+            'cs_invalidate' => $this->changeStreamInvalidate($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1092,5 +1093,56 @@ final class ParityApi
         }
 
         return null;
+    }
+
+    /**
+     * Change-stream invalidate parity (cluster changestreams / #26): dropping
+     * the watched collection delivers an `invalidate` event and then the stream
+     * must refuse to advance (LogicException), instead of silently yielding
+     * nothing forever.
+     */
+    private function changeStreamInvalidate(object $db): array
+    {
+        try {
+            $db->dropCollection('csinv');
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $db->createCollection('csinv');
+        $col = $db->selectCollection('csinv');
+        $col->insertOne(['_id' => 1]);
+
+        $stream = $col->watch([], ['maxAwaitTimeMS' => 300]);
+        $stream->rewind();
+
+        $col->insertOne(['_id' => 2]);
+        $col->drop();
+
+        $sawInvalidate = false;
+        $deadline = \microtime(true) + 8.0;
+        while (! $sawInvalidate && \microtime(true) < $deadline) {
+            try {
+                $stream->next();
+            } catch (\Throwable) {
+                break;
+            }
+
+            if ($stream->valid() && (($stream->current()['operationType'] ?? null) === 'invalidate')) {
+                $sawInvalidate = true;
+            }
+        }
+
+        $threwAfter = 'NO_THROW';
+        try {
+            $stream->next();
+        } catch (\Throwable $e) {
+            $threwAfter = $e instanceof \MongoDB\Driver\Exception\LogicException ? 'LogicException' : \get_class($e);
+        }
+
+        return [
+            'saw_invalidate' => $sawInvalidate,
+            'threw_after' => $threwAfter,
+        ];
     }
 }
