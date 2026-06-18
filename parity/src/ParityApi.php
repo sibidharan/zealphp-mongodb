@@ -72,6 +72,7 @@ final class ParityApi
             'pipeline_update' => $this->pipelineUpdate($db),
             'type_map' => $this->typeMapOp($db),
             'db_info' => $this->dbInfo($db),
+            'collation' => $this->collationOp($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -891,6 +892,34 @@ final class ParityApi
             'admin_size_is_int' => \is_int($admin?->getSizeOnDisk()),
             'admin_isempty_is_bool' => \is_bool($admin?->isEmpty()),
             'names_include_admin' => \in_array('admin', \array_map(static fn ($i) => $i->getName(), \array_values($byName)), true),
+        ];
+    }
+
+    /**
+     * Collation parity (cluster crud / #7): the `collation` option must reach
+     * the server so case-insensitive matching works on find/update — it was
+     * dropped, so a case-insensitive query found nothing.
+     */
+    private function collationOp(object $db): array
+    {
+        $col = $db->selectCollection('collation');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertMany([['_id' => 1, 'name' => 'Hello'], ['_id' => 2, 'name' => 'WORLD']]);
+        $ci = ['locale' => 'en', 'strength' => 2]; // case-insensitive
+
+        $withColl = $col->find(['name' => 'hello'], ['collation' => $ci])->toArray();
+        $withoutColl = $col->find(['name' => 'hello'])->toArray();
+        $upd = $col->updateOne(['name' => 'world'], ['$set' => ['hit' => 1]], ['collation' => $ci]);
+
+        return [
+            'ci_find_count' => \count($withColl),
+            'no_coll_count' => \count($withoutColl),
+            'ci_update_matched' => $upd->getMatchedCount(),
         ];
     }
 }
