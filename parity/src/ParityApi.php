@@ -62,6 +62,7 @@ final class ParityApi
             'insert_ids' => $this->insertIds($db),
             'bulk_ids' => $this->bulkIds($db),
             'find_opts' => $this->findOpts($db),
+            'index_spec' => $this->indexSpec($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -534,6 +535,38 @@ final class ParityApi
             'return_key_first_keys' => isset($rk[0]) ? \array_keys((array) $rk[0]) : null,
             'return_key_count' => \count($rk),
             'show_record_id_present' => isset($sr['$recordId']),
+        ];
+    }
+
+    /**
+     * Index-spec parity (cluster C2 / #16, #17): createIndex must forward
+     * partialFilterExpression / hidden, and listIndexes must surface the full
+     * server spec (expireAfterSeconds, partialFilterExpression, hidden) rather
+     * than a stripped key/name/unique/sparse projection.
+     */
+    private function indexSpec(object $db): array
+    {
+        $col = $db->selectCollection('idxspec');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'ts' => 0, 'pf' => 0, 'h' => 0]);
+        $col->createIndex(['ts' => 1], ['name' => 'ttl_idx', 'expireAfterSeconds' => 3600]);
+        $col->createIndex(['pf' => 1], ['name' => 'partial_idx', 'partialFilterExpression' => ['pf' => ['$gt' => 5]]]);
+        $col->createIndex(['h' => 1], ['name' => 'hidden_idx', 'hidden' => true]);
+
+        $byName = [];
+        foreach ($col->listIndexes() as $ix) {
+            $byName[$ix['name']] = $ix;
+        }
+
+        return [
+            'ttl_expire' => $byName['ttl_idx']['expireAfterSeconds'] ?? 'MISSING',
+            'partial_present' => isset($byName['partial_idx']['partialFilterExpression']) ? 'present' : 'MISSING',
+            'hidden_flag' => $byName['hidden_idx']['hidden'] ?? 'MISSING',
         ];
     }
 }
