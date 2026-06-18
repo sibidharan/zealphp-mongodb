@@ -57,6 +57,7 @@ final class ParityApi
             'gridfs' => $this->gridfs($db),
             'errors' => $this->errors($db),
             'options' => $this->options($db),
+            'int_types' => $this->intTypes($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -381,6 +382,30 @@ final class ParityApi
             'sort_selected_a' => $sorted['a'] ?? null,
             'sort_selected_hit' => $sorted['hit'] ?? null,
             'array_filters_grades' => $afDoc['grades'] ?? null,
+        ];
+    }
+
+    /**
+     * Integer width parity (cluster C3 / #44): a PHP int that fits in 32 bits
+     * must be stored as BSON int32, a larger one as int64 — verified via $type
+     * queries (read-back alone can't tell, since both map to a PHP int).
+     */
+    private function intTypes(object $db): array
+    {
+        $col = $db->selectCollection('inttypes');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'small' => 5, 'big' => 5000000000]);
+
+        return [
+            'small_is_int' => $col->countDocuments(['small' => ['$type' => 'int']]),
+            'small_is_long' => $col->countDocuments(['small' => ['$type' => 'long']]),
+            'big_is_int' => $col->countDocuments(['big' => ['$type' => 'int']]),
+            'big_is_long' => $col->countDocuments(['big' => ['$type' => 'long']]),
         ];
     }
 }
