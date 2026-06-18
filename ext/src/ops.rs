@@ -167,6 +167,28 @@ pub fn create_index(
         } else if let Ok(expire) = opts.get_i32("expireAfterSeconds") {
             idx_opts.expire_after = Some(std::time::Duration::from_secs(expire as u64));
         }
+        // Previously dropped index options (#16, #57): without these a partial
+        // index covered the whole collection, a hidden index stayed visible, a
+        // text index lost its weights/default_language, and wildcard/storage
+        // options never reached the server.
+        if let Ok(pfe) = opts.get_document("partialFilterExpression") {
+            idx_opts.partial_filter_expression = Some(pfe.clone());
+        }
+        if let Ok(hidden) = opts.get_bool("hidden") {
+            idx_opts.hidden = Some(hidden);
+        }
+        if let Ok(weights) = opts.get_document("weights") {
+            idx_opts.weights = Some(weights.clone());
+        }
+        if let Ok(lang) = opts.get_str("default_language") {
+            idx_opts.default_language = Some(lang.to_string());
+        }
+        if let Ok(wp) = opts.get_document("wildcardProjection") {
+            idx_opts.wildcard_projection = Some(wp.clone());
+        }
+        if let Ok(se) = opts.get_document("storageEngine") {
+            idx_opts.storage_engine = Some(se.clone());
+        }
     }
     let index_model = mongodb::IndexModel::builder().keys(keys).options(idx_opts).build();
     coroutine::run_sync(async move {
@@ -233,21 +255,26 @@ pub fn drop_collection(client: &Client, db: &str, col: &str) -> Result<(), Strin
 }
 
 pub fn list_indexes(client: &Client, db: &str, col: &str) -> Result<Vec<Document>, String> {
-    let collection = client.database(db).collection::<Document>(col);
+    // Return the raw server index specs instead of re-projecting a parsed
+    // IndexModel down to key/name/unique/sparse. Re-projecting dropped
+    // expireAfterSeconds, v, partialFilterExpression, collation, weights,
+    // hidden, etc. (#17). The listIndexes command's cursor.firstBatch already
+    // carries every field the official driver surfaces.
+    let database = client.database(db);
+    let col = col.to_string();
     coroutine::run_sync(async move {
-        use futures::TryStreamExt;
-        let cursor = collection.list_indexes().await.map_err(|e| e.to_string())?;
-        let indexes: Vec<_> = cursor.try_collect().await.map_err(|e: mongodb::error::Error| e.to_string())?;
-        Ok::<Vec<Document>, String>(indexes.into_iter().map(|idx| {
-            let mut doc = Document::new();
-            doc.insert("key", bson::Bson::Document(idx.keys));
-            if let Some(opts) = idx.options {
-                if let Some(name) = opts.name { doc.insert("name", name); }
-                if let Some(unique) = opts.unique { doc.insert("unique", unique); }
-                if let Some(sparse) = opts.sparse { doc.insert("sparse", sparse); }
-            }
-            doc
-        }).collect())
+        let result = database.run_command(bson::doc! { "listIndexes": &col }).await?;
+        let indexes = result
+            .get_document("cursor")
+            .ok()
+            .and_then(|c| c.get_array("firstBatch").ok())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|b| b.as_document().cloned())
+                    .collect::<Vec<Document>>()
+            })
+            .unwrap_or_default();
+        Ok::<Vec<Document>, mongodb::error::Error>(indexes)
     })
 }
 
