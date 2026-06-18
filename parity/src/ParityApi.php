@@ -75,6 +75,7 @@ final class ParityApi
             'collation' => $this->collationOp($db),
             'ordered' => $this->orderedOp($db),
             'bypass_validation' => $this->bypassValidation($db),
+            'wc_ack' => $this->wcAck($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1001,6 +1002,35 @@ final class ParityApi
             'invalid_rejected' => $rejected,
             'bypass_inserted' => $bypassed,
             'count' => $col->countDocuments([]),
+        ];
+    }
+
+    /**
+     * Unacknowledged-write parity (cluster crud / #11): a w:0 write reports
+     * isAcknowledged() === false; a default write reports true. (Only the flag
+     * is checked — count getters throw on an unacknowledged result.)
+     */
+    private function wcAck(object $db): array
+    {
+        $col = $db->selectCollection('wcack');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $w0 = new \MongoDB\Driver\WriteConcern(0);
+
+        $insW0 = $col->insertOne(['_id' => 1], ['writeConcern' => $w0]);
+        $insDefault = $col->insertOne(['_id' => 2]);
+        $updW0 = $col->updateOne(['_id' => 1], ['$set' => ['x' => 1]], ['writeConcern' => $w0]);
+        $delW0 = $col->deleteOne(['_id' => 2], ['writeConcern' => $w0]);
+
+        return [
+            'insert_w0_ack' => $insW0->isAcknowledged(),
+            'insert_default_ack' => $insDefault->isAcknowledged(),
+            'update_w0_ack' => $updW0->isAcknowledged(),
+            'delete_w0_ack' => $delW0->isAcknowledged(),
         ];
     }
 }

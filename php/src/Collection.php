@@ -9,6 +9,7 @@ use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\Regex;
 use MongoDB\BSON\Type;
 use MongoDB\BSON\UTCDateTime;
+use MongoDB\Driver\WriteConcern as DriverWriteConcern;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
 use OpenSwoole\Coroutine\System;
@@ -154,6 +155,33 @@ class Collection
         }
     }
 
+    /**
+     * The official driver reports isAcknowledged() === false for an
+     * unacknowledged (w:0) write; the ext always reported true (#11). Flag the
+     * result unacknowledged when the effective writeConcern (per-op or
+     * collection) is w:0.
+     *
+     * @param array<string, mixed> $result
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    private function markAcknowledgement(array $result, array $options): array
+    {
+        $wc = $options['writeConcern'] ?? $this->options['writeConcern'] ?? null;
+        $w = match (true) {
+            $wc instanceof WriteConcern, $wc instanceof DriverWriteConcern => $wc->getW(),
+            is_array($wc) => $wc['w'] ?? null,
+            default => null,
+        };
+
+        if ($w === 0 || $w === '0') {
+            $result['acknowledged'] = false;
+        }
+
+        return $result;
+    }
+
     public function findOne(array|object $filter = [], array $options = []): array|object|null
     {
         self::validateQueryTypeOptions($options);
@@ -196,7 +224,9 @@ class Collection
         $document = self::prepareBSON((array) $document);
         $opts = self::mapOptions($options);
 
-        return new InsertOneResult(self::guard(fn () => zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts)));
+        $raw = self::guard(fn () => zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts));
+
+        return new InsertOneResult($this->markAcknowledgement($raw, $options));
     }
 
     public function updateOne(array|object $filter, array|object $update, array $options = []): UpdateResult
@@ -205,7 +235,9 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = self::mapOptions($options);
 
-        return new UpdateResult(self::guard(fn () => zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts)));
+        $raw = self::guard(fn () => zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
+
+        return new UpdateResult($this->markAcknowledgement($raw, $options));
     }
 
     public function updateMany(array|object $filter, array|object $update, array $options = []): UpdateResult
@@ -222,7 +254,9 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
-        return new DeleteResult(self::guard(fn () => zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts)));
+        $raw = self::guard(fn () => zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
+
+        return new DeleteResult($this->markAcknowledgement($raw, $options));
     }
 
     public function deleteMany(array|object $filter, array $options = []): DeleteResult
