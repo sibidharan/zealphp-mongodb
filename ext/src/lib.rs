@@ -1168,8 +1168,13 @@ pub fn zealphp_mongodb_insert_many(
     let mut zval = Zval::new();
     let mut ht = ZendHashTable::new();
     let mut ids_ht = ZendHashTable::new();
-    for (i, (_k, id)) in result.inserted_ids.iter().enumerate() {
-        let _ = ids_ht.insert_at_index(i as u64, bson_convert::bson_to_zval(id));
+    // Key each inserted id by its INPUT document index (the HashMap key), not by
+    // a fresh enumerate() counter. mongodb's inserted_ids is a HashMap, so its
+    // iteration order is non-deterministic — using enumerate() shuffled the ids
+    // and re-keyed them 0..n, so getInsertedIds()[k] no longer matched input
+    // document k, especially for auto-generated _ids (#10).
+    for (k, id) in result.inserted_ids.iter() {
+        let _ = ids_ht.insert_at_index(*k as u64, bson_convert::bson_to_zval(id));
     }
     let mut ids_z = Zval::new();
     ids_z.set_hashtable(ids_ht);
