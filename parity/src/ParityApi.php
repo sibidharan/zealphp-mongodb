@@ -66,6 +66,7 @@ final class ParityApi
             'list_filter' => $this->listFilter($db),
             'index_flags' => $this->indexFlags($db),
             'empty_shapes' => $this->emptyShapes($db),
+            'txn_state' => $this->txnState($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -679,6 +680,48 @@ final class ParityApi
             'stored_a_is_array' => $isArr($stored['a'] ?? null),
             'stored_nested_inner_is_document' => $isDoc(($stored['nest'] ?? new \stdClass())['inner'] ?? null),
             'computed_is_document' => $isDoc($computed['computed'] ?? null),
+        ];
+    }
+
+    /**
+     * Transaction state-machine parity (cluster transactions / #20, #21, #62):
+     * a started transaction is `starting` until its first op (then
+     * `in_progress`), getTransactionOptions() retains what was passed, and
+     * reusing the session for a non-transaction op after commit resets the
+     * state to `none`.
+     */
+    private function txnState(object $db): array
+    {
+        $col = $db->selectCollection('txnstate');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $session = $this->client->startSession();
+        $session->startTransaction(['maxCommitTimeMS' => 5000]);
+        $afterStart = $session->getTransactionState();
+        $inTxnAtStart = $session->isInTransaction();
+        $opts = $session->getTransactionOptions();
+
+        $col->insertOne(['_id' => 1, 'v' => 1], ['session' => $session]);
+        $afterOp = $session->getTransactionState();
+
+        $session->commitTransaction();
+        $afterCommit = $session->getTransactionState();
+
+        $col->findOne(['_id' => 1], ['session' => $session]);
+        $afterReuse = $session->getTransactionState();
+        $session->endSession();
+
+        return [
+            'after_start' => $afterStart,
+            'in_txn_at_start' => $inTxnAtStart,
+            'maxCommitTimeMS' => $opts['maxCommitTimeMS'] ?? null,
+            'after_op' => $afterOp,
+            'after_commit' => $afterCommit,
+            'after_reuse' => $afterReuse,
         ];
     }
 }
