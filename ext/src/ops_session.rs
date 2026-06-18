@@ -71,12 +71,12 @@ pub fn insert_one(
 }
 
 pub fn insert_many(
-    client: &Client, db: &str, col: &str, docs: Vec<Document>, session: SharedSession,
+    client: &Client, db: &str, col: &str, docs: Vec<Document>, opts: mongodb::options::InsertManyOptions, session: SharedSession,
 ) -> Result<mongodb::results::InsertManyResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move {
         let mut guard = session.lock().await;
-        collection.insert_many(docs).session(&mut *guard).await
+        collection.insert_many(docs).with_options(opts).session(&mut *guard).await
     })
 }
 

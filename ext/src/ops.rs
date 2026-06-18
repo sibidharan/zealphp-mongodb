@@ -236,10 +236,10 @@ pub fn list_databases(client: &Client) -> Result<Vec<String>, String> {
 }
 
 pub fn insert_many(
-    client: &Client, db: &str, col: &str, docs: Vec<Document>,
+    client: &Client, db: &str, col: &str, docs: Vec<Document>, opts: mongodb::options::InsertManyOptions,
 ) -> Result<mongodb::results::InsertManyResult, String> {
     let collection = client.database(db).collection::<Document>(col);
-    coroutine::run_sync(async move { collection.insert_many(docs).await })
+    coroutine::run_sync(async move { collection.insert_many(docs).with_options(opts).await })
 }
 
 pub fn estimated_document_count(
