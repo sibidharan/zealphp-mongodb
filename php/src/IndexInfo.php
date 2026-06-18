@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use function in_array;
+
 class IndexInfo extends Document
 {
     public function getName(): string
@@ -41,5 +43,21 @@ class IndexInfo extends Document
     public function isTtl(): bool
     {
         return isset($this['expireAfterSeconds']);
+    }
+
+    public function getExpireAfterSeconds(): int
+    {
+        return $this['expireAfterSeconds'] ?? 0;
+    }
+
+    public function is2dSphere(): bool
+    {
+        return in_array('2dsphere', $this->getKey(), true);
+    }
+
+    public function isText(): bool
+    {
+        // A text index is stored by the server with a synthetic `_fts` key.
+        return isset($this->getKey()['_fts']);
     }
 }
