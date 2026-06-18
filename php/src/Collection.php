@@ -13,6 +13,7 @@ use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
 use OpenSwoole\Coroutine\System;
 use stdClass;
+use Throwable;
 use ZealPHP\MongoDB\BSON\Binary;
 use ZealPHP\MongoDB\BSON\Decimal128;
 use ZealPHP\MongoDB\BSON\Int64;
@@ -20,6 +21,7 @@ use ZealPHP\MongoDB\BSON\Javascript;
 use ZealPHP\MongoDB\BSON\MaxKey;
 use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\Timestamp;
+use ZealPHP\MongoDB\Exception\ErrorMapper;
 use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 
 use function array_is_list;
@@ -136,6 +138,22 @@ class Collection
         }
     }
 
+    /**
+     * Run a server-touching native call and translate any structured ext error
+     * into the typed MongoDB\Driver\Exception\* the official driver throws
+     * (cluster C1). Non-server errors pass through unchanged.
+     *
+     * @param callable():mixed $native
+     */
+    private static function guard(callable $native): mixed
+    {
+        try {
+            return $native();
+        } catch (Throwable $e) {
+            throw ErrorMapper::map($e);
+        }
+    }
+
     public function findOne(array|object $filter = [], array $options = []): BSONDocument|Document|array|null
     {
         self::validateQueryTypeOptions($options);
@@ -171,7 +189,7 @@ class Collection
         $document = self::prepareBSON((array) $document);
         $opts = self::mapOptions($options);
 
-        return new InsertOneResult(zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts));
+        return new InsertOneResult(self::guard(fn () => zealphp_mongodb_insert_one($this->poolId, $this->dbName, $this->colName, $document, $opts)));
     }
 
     public function updateOne(array|object $filter, array|object $update, array $options = []): UpdateResult
@@ -180,7 +198,7 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = self::mapOptions($options);
 
-        return new UpdateResult(zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
+        return new UpdateResult(self::guard(fn () => zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts)));
     }
 
     public function updateMany(array|object $filter, array|object $update, array $options = []): UpdateResult
@@ -189,7 +207,7 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = self::mapOptions($options);
 
-        return new UpdateResult(zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
+        return new UpdateResult(self::guard(fn () => zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts)));
     }
 
     public function deleteOne(array|object $filter, array $options = []): DeleteResult
@@ -197,7 +215,7 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
-        return new DeleteResult(zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts));
+        return new DeleteResult(self::guard(fn () => zealphp_mongodb_delete_one($this->poolId, $this->dbName, $this->colName, $filter, $opts)));
     }
 
     public function deleteMany(array|object $filter, array $options = []): DeleteResult
@@ -205,7 +223,7 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
-        return new DeleteResult(zealphp_mongodb_delete_many($this->poolId, $this->dbName, $this->colName, $filter, $opts));
+        return new DeleteResult(self::guard(fn () => zealphp_mongodb_delete_many($this->poolId, $this->dbName, $this->colName, $filter, $opts)));
     }
 
     public function replaceOne(array|object $filter, array|object $replacement, array $options = []): UpdateResult
@@ -214,7 +232,7 @@ class Collection
         $replacement = self::prepareBSON((array) $replacement);
         $opts = self::mapOptions($options);
 
-        return new UpdateResult(zealphp_mongodb_replace_one($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
+        return new UpdateResult(self::guard(fn () => zealphp_mongodb_replace_one($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts)));
     }
 
     public function countDocuments(array|object $filter = [], array $options = []): int
@@ -255,7 +273,7 @@ class Collection
         $update = self::prepareBSON((array) $update);
         $opts = self::mapOptions($options);
 
-        $result = zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
+        $result = self::guard(fn () => zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
 
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
@@ -265,7 +283,7 @@ class Collection
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
-        $result = zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+        $result = self::guard(fn () => zealphp_mongodb_find_one_and_delete($this->poolId, $this->dbName, $this->colName, $filter, $opts));
 
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
@@ -276,7 +294,7 @@ class Collection
         $replacement = self::prepareBSON((array) $replacement);
         $opts = self::mapOptions($options);
 
-        $result = zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts);
+        $result = self::guard(fn () => zealphp_mongodb_find_one_and_replace($this->poolId, $this->dbName, $this->colName, $filter, $replacement, $opts));
 
         return is_array($result) ? self::wrapDoc($result) : $result;
     }
@@ -294,7 +312,7 @@ class Collection
         $docs = array_map(static fn ($d) => self::prepareBSON((array) $d), $documents);
         $opts = self::mapOptions($options);
 
-        return new InsertManyResult(zealphp_mongodb_insert_many($this->poolId, $this->dbName, $this->colName, $docs, $opts));
+        return new InsertManyResult(self::guard(fn () => zealphp_mongodb_insert_many($this->poolId, $this->dbName, $this->colName, $docs, $opts)));
     }
 
     public function estimatedDocumentCount(array $options = []): int

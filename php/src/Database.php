@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ZealPHP\MongoDB;
 
 use Stringable;
+use Throwable;
+use ZealPHP\MongoDB\Exception\ErrorMapper;
 
 use function array_merge;
 use function zealphp_mongodb_create_collection;
@@ -50,7 +52,11 @@ class Database implements Stringable
     public function command(array|object $command, array $options = []): array
     {
         $cmd = Collection::prepareBSON((array) $command);
-        $result = zealphp_mongodb_run_command($this->poolId, $this->databaseName, $cmd);
+        try {
+            $result = zealphp_mongodb_run_command($this->poolId, $this->databaseName, $cmd);
+        } catch (Throwable $e) {
+            throw ErrorMapper::map($e);
+        }
 
         return (array) $result;
     }
