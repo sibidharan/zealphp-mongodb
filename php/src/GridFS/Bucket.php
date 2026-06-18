@@ -16,6 +16,7 @@ use function fwrite;
 use function is_resource;
 use function iterator_to_array;
 use function rewind;
+use function sprintf;
 use function stream_get_contents;
 use function zealphp_mongodb_gridfs_delete;
 use function zealphp_mongodb_gridfs_download;
@@ -104,7 +105,18 @@ class Bucket
 
         $chunkSize = $options['chunkSizeBytes'] ?? $this->options['chunkSizeBytes'] ?? null;
         if ($chunkSize !== null) {
-            $opts['chunkSizeBytes'] = (int) $chunkSize;
+            $chunkSize = (int) $chunkSize;
+            // Reject chunkSizeBytes < 1 client-side, matching the official driver.
+            // Without this the Rust ext loops forever slicing the payload into
+            // zero-length chunks, hanging the worker (#66, worker DoS).
+            if ($chunkSize < 1) {
+                throw new InvalidArgumentException(sprintf(
+                    'Expected "chunkSizeBytes" option to be >= 1, %d given',
+                    $chunkSize,
+                ));
+            }
+
+            $opts['chunkSizeBytes'] = $chunkSize;
         }
 
         $optsOrNull = $opts ?: null;

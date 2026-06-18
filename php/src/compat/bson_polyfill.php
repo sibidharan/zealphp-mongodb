@@ -738,6 +738,18 @@ namespace MongoDB\Driver\Exception {
         class RuntimeException extends \RuntimeException implements Exception {}
     }
 
+    if (! class_exists('MongoDB\Driver\Exception\LogicException', false)) {
+        class LogicException extends \LogicException implements Exception {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\InvalidArgumentException', false)) {
+        class InvalidArgumentException extends \InvalidArgumentException implements Exception {}
+    }
+
+    if (! class_exists('MongoDB\Driver\Exception\UnexpectedValueException', false)) {
+        class UnexpectedValueException extends \UnexpectedValueException implements Exception {}
+    }
+
     if (! class_exists('MongoDB\Driver\Exception\BulkWriteException', false)) {
         class BulkWriteException extends RuntimeException
         {

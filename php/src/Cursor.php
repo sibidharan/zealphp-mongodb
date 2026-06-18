@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB;
 
 use Iterator;
 use MongoDB\Model\BSONDocument;
+use ZealPHP\MongoDB\Exception\LogicException;
 
 use function array_map;
 use function function_exists;
@@ -66,8 +67,12 @@ class Cursor implements Iterator
 
     public function rewind(): void
     {
+        // A cursor may be iterated only once. Official MongoDB\Driver\Cursor
+        // throws on any rewind after iteration has begun — a second foreach, or
+        // toArray()/iteration after partial consumption (#14). Silently
+        // no-oping (the old behaviour) dropped already-consumed docs.
         if ($this->started) {
-            return;
+            throw new LogicException('Cursors cannot rewind after starting iteration');
         }
 
         $this->started = true;
@@ -85,6 +90,12 @@ class Cursor implements Iterator
     /** @return list<Document|array<string, mixed>> */
     public function toArray(): array
     {
+        // Same single-iteration contract as rewind(): draining a cursor that has
+        // already started iterating would silently drop the consumed docs (#14).
+        if ($this->started) {
+            throw new LogicException('Cursors cannot rewind after starting iteration');
+        }
+
         if ($this->canUseFindAll()) {
             $q = $this->deferredQuery;
             $this->deferredQuery = null;

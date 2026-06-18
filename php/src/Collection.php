@@ -20,6 +20,7 @@ use ZealPHP\MongoDB\BSON\Javascript;
 use ZealPHP\MongoDB\BSON\MaxKey;
 use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\Timestamp;
+use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 
 use function array_is_list;
 use function array_map;
@@ -28,10 +29,13 @@ use function base64_decode;
 use function base64_encode;
 use function count;
 use function dechex;
+use function get_debug_type;
 use function get_object_vars;
 use function hexdec;
 use function is_array;
+use function is_int;
 use function is_object;
+use function sprintf;
 use function str_pad;
 use function zealphp_mongodb_aggregate;
 use function zealphp_mongodb_aggregate_all;
@@ -89,8 +93,52 @@ class Collection
         return $options ?: null;
     }
 
+    /**
+     * Reject non-integer `limit`/`skip` client-side, matching the official
+     * driver which raises InvalidArgumentException before any wire I/O instead
+     * of silently dropping a float-typed option (#50).
+     *
+     * @param array<string, mixed> $options
+     */
+    private static function validateQueryTypeOptions(array $options): void
+    {
+        foreach (['limit', 'skip'] as $option) {
+            if (isset($options[$option]) && ! is_int($options[$option])) {
+                throw new InvalidArgumentException(sprintf(
+                    'Expected "%s" option to have type "integer" but found "%s"',
+                    $option,
+                    get_debug_type($options[$option]),
+                ));
+            }
+        }
+    }
+
+    /**
+     * Reject documents containing an empty-string element key at any depth,
+     * matching the official driver's client-side BSON validation (#48). A
+     * literal empty key is invalid per the BSON spec; the server tolerates it,
+     * so without this check malformed-key bugs slip silently into the database.
+     *
+     * @param array<array-key, mixed> $document
+     */
+    private static function assertDocumentKeysNotEmpty(array $document): void
+    {
+        foreach ($document as $key => $value) {
+            if ($key === '') {
+                throw new InvalidArgumentException('invalid document for insert: Element key cannot be an empty string');
+            }
+
+            if (! is_array($value)) {
+                continue;
+            }
+
+            self::assertDocumentKeysNotEmpty($value);
+        }
+    }
+
     public function findOne(array|object $filter = [], array $options = []): BSONDocument|Document|array|null
     {
+        self::validateQueryTypeOptions($options);
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
@@ -101,6 +149,7 @@ class Collection
 
     public function find(array|object $filter = [], array $options = []): Cursor|ArrayCursor
     {
+        self::validateQueryTypeOptions($options);
         $filter = self::prepareBSON((array) $filter);
         $opts = self::mapOptions($options);
 
@@ -118,6 +167,7 @@ class Collection
 
     public function insertOne(array|object $document, array $options = []): InsertOneResult
     {
+        self::assertDocumentKeysNotEmpty((array) $document);
         $document = self::prepareBSON((array) $document);
         $opts = self::mapOptions($options);
 
@@ -335,6 +385,10 @@ class Collection
 
     public function createIndexes(array $indexes, array $options = []): array
     {
+        if ($indexes === []) {
+            throw new InvalidArgumentException('$indexes is empty');
+        }
+
         $names = [];
         foreach ($indexes as $idx) {
             $key = $idx['key'] ?? [];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB\Tests\Integration;
 
+use MongoDB\Driver\Exception\LogicException;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 use ZealPHP\MongoDB\BulkWriteResult;
@@ -100,6 +101,39 @@ class CollectionTest extends TestCase
         }
 
         $this->assertSame([4, 3], $docs);
+    }
+
+    /**
+     * #14: a cursor may be iterated only once. Re-iterating (a second foreach,
+     * or toArray() after partial consumption) must throw LogicException —
+     * matching official MongoDB\Driver\Cursor — instead of silently dropping
+     * the already-consumed documents.
+     */
+    public function testCursorCannotReiterateWithSecondForeach(): void
+    {
+        $this->col->insertMany([['n' => 1], ['n' => 2], ['n' => 3]]);
+        $cursor = $this->col->find([]);
+
+        foreach ($cursor as $doc) {
+            // drain fully
+            $this->assertArrayHasKey('n', $doc);
+        }
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Cursors cannot rewind after starting iteration');
+        foreach ($cursor as $ignored) {
+            $this->fail('second iteration must not yield');
+        }
+    }
+
+    public function testCursorToArrayAfterPartialIterationThrows(): void
+    {
+        $this->col->insertMany([['n' => 1], ['n' => 2], ['n' => 3]]);
+        $cursor = $this->col->find([]);
+        $cursor->rewind();
+
+        $this->expectException(LogicException::class);
+        $cursor->toArray();
     }
 
     public function testCountDocumentsAndEstimated(): void

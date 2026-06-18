@@ -8,6 +8,7 @@ use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 use ZealPHP\MongoDB\Client;
+use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 use ZealPHP\MongoDB\GridFS\Bucket;
 
 use function extension_loaded;
@@ -158,5 +159,24 @@ class GridFSTest extends TestCase
         $this->bucket->rename($id, 'new-name.txt');
         $this->assertNull($this->bucket->findOne(['filename' => 'old-name.txt']));
         $this->assertNotNull($this->bucket->findOne(['filename' => 'new-name.txt']));
+    }
+
+    /**
+     * #66: chunkSizeBytes < 1 must be rejected client-side with
+     * InvalidArgumentException. Previously the ext looped forever slicing the
+     * payload into zero-length chunks, hanging the worker (DoS).
+     */
+    public function testUploadRejectsZeroChunkSize(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Expected "chunkSizeBytes" option to be >= 1, 0 given');
+        $this->bucket->uploadFromStream('dos.bin', self::streamOf('payload'), ['chunkSizeBytes' => 0]);
+    }
+
+    public function testUploadRejectsNegativeChunkSize(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Expected "chunkSizeBytes" option to be >= 1, -5 given');
+        $this->bucket->uploadFromStream('dos.bin', self::streamOf('payload'), ['chunkSizeBytes' => -5]);
     }
 }
