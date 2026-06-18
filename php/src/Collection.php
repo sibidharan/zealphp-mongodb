@@ -322,6 +322,10 @@ class Collection
 
     public function bulkWrite(array $operations, array $options = []): BulkWriteResult
     {
+        if ($operations === []) {
+            throw new InvalidArgumentException('$operations is empty');
+        }
+
         $results = [
             'inserted_count' => 0,
             'matched_count' => 0,

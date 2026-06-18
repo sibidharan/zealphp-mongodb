@@ -10,7 +10,7 @@ declare(strict_types=1);
  */
 [$_, $cBase, $zBase] = $argv + [null, 'http://127.0.0.1:8089/api.php', 'http://127.0.0.1:8090/api'];
 
-$ops = ['reset', 'crud', 'query', 'aggregate', 'types', 'indexes', 'bulk', 'txn_commit', 'txn_abort', 'change_stream', 'gridfs', 'errors', 'options', 'int_types', 'write_results', 'insert_ids', 'bulk_ids', 'find_opts', 'index_spec', 'list_filter'];
+$ops = ['reset', 'crud', 'query', 'aggregate', 'types', 'indexes', 'bulk', 'txn_commit', 'txn_abort', 'change_stream', 'gridfs', 'errors', 'options', 'int_types', 'write_results', 'insert_ids', 'bulk_ids', 'find_opts', 'index_spec', 'list_filter', 'index_flags'];
 
 function fetch(string $base, string $op): array
 {

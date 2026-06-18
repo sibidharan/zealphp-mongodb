@@ -64,6 +64,7 @@ final class ParityApi
             'find_opts' => $this->findOpts($db),
             'index_spec' => $this->indexSpec($db),
             'list_filter' => $this->listFilter($db),
+            'index_flags' => $this->indexFlags($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -593,6 +594,45 @@ final class ParityApi
         return [
             'all_contains' => \array_values(\array_intersect(['alpha', 'beta', 'gamma'], $all)),
             'filtered' => \array_values($filtered),
+        ];
+    }
+
+    /**
+     * IndexInfo getters (#18) and empty-bulkWrite validation (#12): is2dSphere()
+     * / isText() must classify the index type, and bulkWrite([]) must throw
+     * InvalidArgumentException instead of silently returning a zero result.
+     */
+    private function indexFlags(object $db): array
+    {
+        $col = $db->selectCollection('idxflags');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'loc' => ['type' => 'Point', 'coordinates' => [0, 0]], 'txt' => 'hello']);
+        $col->createIndex(['loc' => '2dsphere'], ['name' => 'geo']);
+        $col->createIndex(['txt' => 'text'], ['name' => 'txt_idx']);
+
+        $flags = [];
+        foreach ($col->listIndexes() as $ix) {
+            $flags[$ix->getName()] = ['is2dSphere' => $ix->is2dSphere(), 'isText' => $ix->isText()];
+        }
+
+        $emptyBulk = 'NO_THROW';
+        try {
+            $col->bulkWrite([]);
+        } catch (\Throwable $e) {
+            $emptyBulk = $e instanceof \MongoDB\Exception\InvalidArgumentException
+                ? 'InvalidArgumentException'
+                : \get_class($e);
+        }
+
+        return [
+            'geo' => $flags['geo'] ?? null,
+            'text' => $flags['txt_idx'] ?? null,
+            'empty_bulk' => $emptyBulk,
         ];
     }
 }
