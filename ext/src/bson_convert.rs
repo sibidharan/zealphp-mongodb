@@ -224,6 +224,15 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
         return Ok(Bson::Boolean(b));
     }
     if let Some(i) = zval.long() {
+        // Match the official PHP driver: a value that fits in 32 bits is stored
+        // as BSON int32, otherwise int64. Storing every int as int64 broke
+        // `$type:'int'` queries, schema validators and $sum/$count parity (#44).
+        // The read side maps both Int32 and Int64 back to a PHP int, so this
+        // round-trips losslessly.
+        if i >= i32::MIN as i64 && i <= i32::MAX as i64 {
+            return Ok(Bson::Int32(i as i32));
+        }
+
         return Ok(Bson::Int64(i));
     }
     if let Some(f) = zval.double() {
