@@ -127,6 +127,16 @@ class Cursor implements Iterator
             }
         }
 
+        // Close the native cursor before discarding the id. Without this the
+        // Rust-side cursor (and its buffered result set) is orphaned in the
+        // global CURSORS map: the cursor_next fallback path never self-removes,
+        // and __destruct() short-circuits once cursorId is null — so every
+        // find()->toArray() would leak one cursor. cursor_close is idempotent,
+        // so it is harmless on the cursor_to_array path that already drained.
+        if ($this->cursorId !== null) {
+            @zealphp_mongodb_cursor_close($this->cursorId);
+        }
+
         $this->current = null;
         $this->started = true;
         $this->cursorId = null;
