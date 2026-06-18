@@ -1,0 +1,12 @@
+# Keep the Docker build context small. The parity rig (parity/Dockerfile)
+# uses the repo root as context and rebuilds the Rust ext from scratch inside
+# the image, so none of these are needed — and ext/target alone is ~2 GB.
+.git
+ext/target
+**/target/release/deps
+**/target/release/build
+vendor
+node_modules
+.phpcs-cache
+.phpunit.cache
+*.log

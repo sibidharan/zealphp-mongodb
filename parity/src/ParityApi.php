@@ -55,6 +55,7 @@ final class ParityApi
             'txn_abort' => $this->txn($db->selectCollection('txn'), commit: false),
             'change_stream' => $this->changeStream($db->selectCollection('cs')),
             'gridfs' => $this->gridfs($db),
+            'errors' => $this->errors($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -291,5 +292,53 @@ final class ParityApi
             'chunks' => $chunkCount,
             'files_after_delete' => $afterDelete,
         ];
+    }
+
+    /**
+     * Typed-exception parity (cluster C1): a duplicate-key insert and a bad
+     * command must throw the SAME exception class with the SAME server code on
+     * both drivers — not a bare \Exception with code 0.
+     */
+    private function errors(object $db): array
+    {
+        $col = $db->selectCollection('errs');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run — collection doesn't exist yet
+        }
+
+        $col->insertOne(['_id' => 1, 'v' => 'seed']);
+
+        return [
+            'dup_key' => $this->captureError(static fn () => $col->insertOne(['_id' => 1, 'v' => 'dup'])),
+            'bad_command' => $this->captureError(static fn () => $db->command(['thisIsNotARealCommand' => 1])),
+        ];
+    }
+
+    /** @param callable():mixed $fn */
+    private function captureError(callable $fn): array
+    {
+        try {
+            $fn();
+
+            return ['threw' => false];
+        } catch (\Throwable $e) {
+            $info = [
+                'threw' => true,
+                'class' => \get_class($e),
+                'code' => $e->getCode(),
+                'is_driver_exception' => $e instanceof \MongoDB\Driver\Exception\Exception,
+                'is_bulk_write' => $e instanceof \MongoDB\Driver\Exception\BulkWriteException,
+                'is_command' => $e instanceof \MongoDB\Driver\Exception\CommandException,
+            ];
+
+            if ($e instanceof \MongoDB\Driver\Exception\BulkWriteException) {
+                $writeErrors = $e->getWriteResult()->getWriteErrors();
+                $info['first_write_error_code'] = isset($writeErrors[0]) ? $writeErrors[0]->getCode() : null;
+            }
+
+            return $info;
+        }
     }
 }

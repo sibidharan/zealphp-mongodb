@@ -62,13 +62,39 @@ pub fn get_cid() -> i64 {
     }
 }
 
+/// How an operation error is rendered into the string the PHP layer receives.
+/// `mongodb::error::Error` is encoded structurally (sentinel-framed code /
+/// codeName / writeErrors) so PHP can rethrow a typed exception (cluster C1);
+/// every other error type stays a plain string.
+pub trait EncodeErr {
+    fn encode_err(self) -> String;
+}
+
+impl EncodeErr for mongodb::error::Error {
+    fn encode_err(self) -> String {
+        crate::errconv::encode_mongo_error(&self)
+    }
+}
+
+impl EncodeErr for String {
+    fn encode_err(self) -> String {
+        self
+    }
+}
+
+impl EncodeErr for &str {
+    fn encode_err(self) -> String {
+        self.to_string()
+    }
+}
+
 pub fn run_sync<F, T, E>(future: F) -> Result<T, String>
 where
     F: std::future::Future<Output = Result<T, E>> + Send + 'static,
     T: Send + 'static,
-    E: std::fmt::Display + Send + 'static,
+    E: EncodeErr + Send + 'static,
 {
-    runtime().block_on(future).map_err(|e| e.to_string())
+    runtime().block_on(future).map_err(|e| e.encode_err())
 }
 
 pub fn create_eventfd() -> i32 {

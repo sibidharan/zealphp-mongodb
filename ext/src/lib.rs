@@ -5,6 +5,7 @@ mod change_stream;
 mod gridfs;
 mod coroutine;
 mod cursor;
+mod errconv;
 mod ops;
 mod ops_session;
 mod pool;
