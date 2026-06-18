@@ -63,6 +63,11 @@ fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
                 if let Some(v) = arr.get("skip") { if let Some(n) = v.long() { fo.skip = Some(n as u64); } }
                 if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
                 if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
+                if let Some(v) = arr.get("returnKey") { if let Some(b) = v.bool() { fo.return_key = Some(b); } }
+                if let Some(v) = arr.get("showRecordId") { if let Some(b) = v.bool() { fo.show_record_id = Some(b); } }
+                if let Some(v) = arr.get("min") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.min = Some(d); } }
+                if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
+                if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
             }
         }
     }
@@ -76,6 +81,11 @@ fn parse_find_one_options(opts: Option<&Zval>) -> mongodb::options::FindOneOptio
             if let Some(arr) = z.array() {
                 if let Some(v) = arr.get("sort") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.sort = Some(d); } }
                 if let Some(v) = arr.get("projection") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.projection = Some(d); } }
+                if let Some(v) = arr.get("returnKey") { if let Some(b) = v.bool() { fo.return_key = Some(b); } }
+                if let Some(v) = arr.get("showRecordId") { if let Some(b) = v.bool() { fo.show_record_id = Some(b); } }
+                if let Some(v) = arr.get("min") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.min = Some(d); } }
+                if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
+                if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
             }
         }
     }
