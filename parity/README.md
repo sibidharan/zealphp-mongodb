@@ -1,5 +1,12 @@
 # Dual-runtime parity + memory rig
 
+> **Closing a parity issue?** Read [`METHODOLOGY.md`](METHODOLOGY.md) — the
+> repeatable rig-driven loop (reproduce as an op → confirm divergence → fix →
+> prove byte-identical), the "make the bug observable" traps, a map of where
+> each fix-shape lives, and the memory-safety rules. It turns parity work into a
+> mechanical checklist.
+
+
 Proves the Rust driver (`zealphp_mongodb.so` + `zealphp/mongodb`) behaves
 **identically** to the official C driver (`ext-mongodb` + `mongodb/mongodb`)
 — and stays memory-bounded — by running the **same service code**
