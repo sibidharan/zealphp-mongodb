@@ -73,6 +73,7 @@ final class ParityApi
             'type_map' => $this->typeMapOp($db),
             'db_info' => $this->dbInfo($db),
             'collation' => $this->collationOp($db),
+            'ordered' => $this->orderedOp($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -920,6 +921,45 @@ final class ParityApi
             'ci_find_count' => \count($withColl),
             'no_coll_count' => \count($withoutColl),
             'ci_update_matched' => $upd->getMatchedCount(),
+        ];
+    }
+
+    /**
+     * insertMany ordered parity (cluster crud / #7): ordered:false must keep
+     * inserting past a duplicate-key failure; ordered:true (default) stops at
+     * the first error. The option was dropped, so both behaved as ordered:true.
+     */
+    private function orderedOp(object $db): array
+    {
+        $a = $db->selectCollection('ordered_false');
+        $b = $db->selectCollection('ordered_true');
+        foreach ([$a, $b] as $c) {
+            try {
+                $c->drop();
+            } catch (\Throwable) {
+                // first run
+            }
+
+            $c->insertOne(['_id' => 2, 'pre' => 1]);
+        }
+
+        try {
+            $a->insertMany([['_id' => 1], ['_id' => 2], ['_id' => 3]], ['ordered' => false]);
+        } catch (\Throwable) {
+            // duplicate _id=2 throws; ordered:false still inserts 1 and 3
+        }
+
+        try {
+            $b->insertMany([['_id' => 1], ['_id' => 2], ['_id' => 3]], ['ordered' => true]);
+        } catch (\Throwable) {
+            // duplicate _id=2 throws; ordered:true stops before 3
+        }
+
+        return [
+            'ordered_false_count' => $a->countDocuments([]),
+            'ordered_true_count' => $b->countDocuments([]),
+            'has_3_false' => $a->countDocuments(['_id' => 3]),
+            'has_3_true' => $b->countDocuments(['_id' => 3]),
         ];
     }
 }

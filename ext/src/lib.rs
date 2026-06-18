@@ -117,6 +117,21 @@ fn parse_update_options(opts: Option<&Zval>) -> mongodb::options::UpdateOptions 
     uo
 }
 
+fn parse_insert_many_options(opts: Option<&Zval>) -> mongodb::options::InsertManyOptions {
+    let mut io = mongodb::options::InsertManyOptions::default();
+    if let Some(z) = opts {
+        if !z.is_null() {
+            if let Some(arr) = z.array() {
+                // ordered:false must continue past a failing document instead of
+                // aborting at the first error (#7).
+                if let Some(v) = arr.get("ordered") { if let Some(b) = v.bool() { io.ordered = Some(b); } }
+                if let Some(v) = arr.get("bypassDocumentValidation") { if let Some(b) = v.bool() { io.bypass_document_validation = Some(b); } }
+            }
+        }
+    }
+    io
+}
+
 fn parse_replace_options(opts: Option<&Zval>) -> mongodb::options::ReplaceOptions {
     let mut ro = mongodb::options::ReplaceOptions::default();
     if let Some(z) = opts {
@@ -1182,9 +1197,10 @@ pub fn zealphp_mongodb_insert_many(
     for (_, val) in docs_arr.iter() {
         docs.push(bson_convert::php_to_doc(val).map_err(|e| PhpException::default(e))?);
     }
+    let im_opts = parse_insert_many_options(opts);
     let result = match parse_session(opts)? {
-        Some(sess) => ops_session::insert_many(&client, db, col, docs, sess),
-        None => ops::insert_many(&client, db, col, docs),
+        Some(sess) => ops_session::insert_many(&client, db, col, docs, im_opts, sess),
+        None => ops::insert_many(&client, db, col, docs, im_opts),
     }
     .map_err(|e| PhpException::default(e))?;
 
