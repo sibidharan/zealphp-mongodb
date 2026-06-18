@@ -418,9 +418,12 @@ class Collection
         return array_map(static fn ($idx) => new IndexInfo(is_array($idx) ? $idx : (array) $idx), $raw);
     }
 
-    public function dropIndex(string $indexName, array $options = []): array
+    public function dropIndex(string|IndexInfo $indexName, array $options = []): array
     {
-        zealphp_mongodb_drop_index($this->poolId, $this->dbName, $this->colName, $indexName);
+        // Accept an IndexInfo (as returned by listIndexes()) as well as a name,
+        // matching the official driver — passing one was a fatal TypeError (#58).
+        $name = $indexName instanceof IndexInfo ? $indexName->getName() : $indexName;
+        zealphp_mongodb_drop_index($this->poolId, $this->dbName, $this->colName, $name);
 
         return ['ok' => 1];
     }

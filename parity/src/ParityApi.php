@@ -68,6 +68,7 @@ final class ParityApi
             'empty_shapes' => $this->emptyShapes($db),
             'txn_state' => $this->txnState($db),
             'create_coll' => $this->createColl($db),
+            'drop_index_info' => $this->dropIndexInfo($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -755,5 +756,41 @@ final class ParityApi
             'is_capped' => ($info['options']['capped'] ?? false) === true,
             'max' => $info['options']['max'] ?? null,
         ];
+    }
+
+    /**
+     * dropIndex(IndexInfo) parity (cluster indexes / #58): an IndexInfo (as
+     * returned by listIndexes) must be accepted as well as a name string —
+     * passing one used to be a fatal TypeError.
+     */
+    private function dropIndexInfo(object $db): array
+    {
+        $col = $db->selectCollection('dropidx');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'a' => 1]);
+        $col->createIndex(['a' => 1], ['name' => 'a_idx']);
+
+        $target = null;
+        foreach ($col->listIndexes() as $ix) {
+            if ($ix->getName() === 'a_idx') {
+                $target = $ix;
+            }
+        }
+
+        $col->dropIndex($target);
+
+        $namesAfter = [];
+        foreach ($col->listIndexes() as $ix) {
+            $namesAfter[] = $ix->getName();
+        }
+
+        \sort($namesAfter);
+
+        return ['names_after_drop' => $namesAfter];
     }
 }
