@@ -59,6 +59,7 @@ final class ParityApi
             'options' => $this->options($db),
             'int_types' => $this->intTypes($db),
             'write_results' => $this->writeResults($db),
+            'insert_ids' => $this->insertIds($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -437,6 +438,39 @@ final class ParityApi
             'up2_upserted_id' => $up2->getUpsertedId(),
             'up2_matched' => $up2->getMatchedCount(),
             'up2_modified' => $up2->getModifiedCount(),
+        ];
+    }
+
+    /**
+     * insertMany id-mapping parity (cluster C4 / #10): getInsertedIds() must be
+     * keyed by INPUT document index, not shuffled by the ext's HashMap order.
+     * Explicit string _ids keep the values comparable across drivers.
+     */
+    private function insertIds(object $db): array
+    {
+        $col = $db->selectCollection('insids');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $res = $col->insertMany([
+            ['_id' => 'doc-a', 'n' => 0],
+            ['_id' => 'doc-b', 'n' => 1],
+            ['_id' => 'doc-c', 'n' => 2],
+            ['_id' => 'doc-d', 'n' => 3],
+            ['_id' => 'doc-e', 'n' => 4],
+        ]);
+        $ids = $res->getInsertedIds();
+
+        return [
+            'count' => $res->getInsertedCount(),
+            'id_0' => $ids[0] ?? null,
+            'id_1' => $ids[1] ?? null,
+            'id_2' => $ids[2] ?? null,
+            'id_3' => $ids[3] ?? null,
+            'id_4' => $ids[4] ?? null,
         ];
     }
 }
