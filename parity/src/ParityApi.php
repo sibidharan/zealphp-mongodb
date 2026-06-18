@@ -67,6 +67,7 @@ final class ParityApi
             'index_flags' => $this->indexFlags($db),
             'empty_shapes' => $this->emptyShapes($db),
             'txn_state' => $this->txnState($db),
+            'create_coll' => $this->createColl($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -722,6 +723,37 @@ final class ParityApi
             'after_op' => $afterOp,
             'after_commit' => $afterCommit,
             'after_reuse' => $afterReuse,
+        ];
+    }
+
+    /**
+     * createCollection options parity (cluster admin / #31): capped/size/max
+     * and friends must reach the server instead of being dropped. A capped
+     * collection with max:3 keeps only the last 3 of 5 inserts.
+     */
+    private function createColl(object $db): array
+    {
+        try {
+            $db->dropCollection('capped_test');
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $db->createCollection('capped_test', ['capped' => true, 'size' => 8192, 'max' => 3]);
+        $col = $db->selectCollection('capped_test');
+        for ($i = 1; $i <= 5; $i++) {
+            $col->insertOne(['_id' => $i]);
+        }
+
+        $info = null;
+        foreach ($db->listCollections(['filter' => ['name' => 'capped_test']]) as $c) {
+            $info = $c;
+        }
+
+        return [
+            'count_after_5_inserts' => $col->countDocuments([]),
+            'is_capped' => ($info['options']['capped'] ?? false) === true,
+            'max' => $info['options']['max'] ?? null,
         ];
     }
 }
