@@ -64,14 +64,26 @@ pub fn next_doc(cursor_id: u64) -> Result<Option<RawDocumentBuf>, String> {
             .ok_or_else(|| format!("Invalid cursor ID: {}", cursor_id))?
     };
 
-    coroutine::run_sync(async move {
+    let result = coroutine::run_sync(async move {
         let mut guard = cursor_arc.lock().await;
         match guard.next_raw().await {
             Some(Ok(doc)) => Ok(Some(doc)),
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }
-    })
+    });
+
+    // Defense-in-depth against the memory leak: once the stream is exhausted
+    // (Ok(None)) or errors, the cursor is spent. Drop it from the global map
+    // right away so its buffered result set is freed without waiting for an
+    // explicit cursor_close() or the PHP wrapper's __destruct() — which under
+    // OpenSwoole coroutine mode can be deferred to GC, letting exhausted
+    // cursors accumulate unboundedly in a never-restarting worker.
+    if !matches!(result, Ok(Some(_))) {
+        remove(cursor_id);
+    }
+
+    result
 }
 
 pub fn drain_to_vec(cursor_id: u64) -> Result<Vec<RawDocumentBuf>, String> {
