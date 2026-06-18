@@ -641,6 +641,34 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
     zval
 }
 
+/// True when the Zval is a non-empty PHP list (sequential 0..n integer keys).
+fn zval_is_list(zval: &Zval) -> bool {
+    match zval.array() {
+        Some(arr) => {
+            arr.len() > 0
+                && arr.iter().enumerate().all(|(i, (key, _))| {
+                    matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
+                })
+        }
+        None => false,
+    }
+}
+
+/// An update is either update operators (a document like `{$set: …}`) or an
+/// aggregation pipeline (a LIST of stage documents, MongoDB 4.2+). The PHP layer
+/// passes both as arrays, so a pipeline must be detected by its list shape and
+/// sent as UpdateModifications::Pipeline — otherwise it was serialized as a
+/// document with "0"/"1" keys and the server rejected it (#46).
+pub fn php_to_update_modifications(
+    zval: &Zval,
+) -> Result<mongodb::options::UpdateModifications, String> {
+    if zval_is_list(zval) {
+        Ok(mongodb::options::UpdateModifications::Pipeline(php_to_pipeline(zval)?))
+    } else {
+        Ok(mongodb::options::UpdateModifications::Document(php_to_doc(zval)?))
+    }
+}
+
 pub fn php_to_pipeline(zval: &Zval) -> Result<Vec<Document>, String> {
     match zval.array() {
         Some(arr) => {
