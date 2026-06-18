@@ -1404,6 +1404,16 @@ fn update_result_to_zval(result: &mongodb::results::UpdateResult) -> Zval {
     let mut modified = Zval::new();
     modified.set_long(result.modified_count as i64);
     let _ = ht.insert("modified_count", modified);
+
+    // Surface the upsert outcome (#8): the official driver reports
+    // getUpsertedCount()===1 and getUpsertedId()===<_id> after an upsert.
+    let mut upserted_count = Zval::new();
+    upserted_count.set_long(if result.upserted_id.is_some() { 1 } else { 0 });
+    let _ = ht.insert("upserted_count", upserted_count);
+    if let Some(id) = &result.upserted_id {
+        let _ = ht.insert("upserted_id", bson_convert::bson_to_zval(id));
+    }
+
     let mut ack = Zval::new();
     ack.set_bool(true);
     let _ = ht.insert("acknowledged", ack);
