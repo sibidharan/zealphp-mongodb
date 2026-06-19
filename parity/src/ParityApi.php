@@ -101,6 +101,7 @@ final class ParityApi
             'txn_invalid_read_concern' => $this->txnInvalidReadConcern($db),
             'txn_unsat_write_concern' => $this->txnUnsatWriteConcern($db),
             'read_pref_routing' => $this->readPrefRouting(),
+            'cs_fulldoc_deleted' => $this->csFullDocDeleted($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -352,6 +353,54 @@ final class ParityApi
         }
 
         return ['events' => $events, 'resume_token_present' => $stream->getResumeToken() !== null];
+    }
+
+    /**
+     * fullDocument:updateLookup on a since-deleted doc (#23): the lookup
+     * resolves when the update event is READ, so deleting the doc first makes
+     * this deterministic. The official driver returns an explicit
+     * `fullDocument: null` (key present); zeal must not omit the key.
+     */
+    private function csFullDocDeleted(object $db): array
+    {
+        $col = $db->selectCollection('csfd');
+        $col->drop();
+        $col->insertOne(['warmup' => true]);
+
+        $stream = $col->watch(
+            [['$match' => ['operationType' => 'update']]],
+            ['maxAwaitTimeMS' => 300, 'fullDocument' => 'updateLookup'],
+        );
+        $stream->rewind();
+
+        $col->insertOne(['_id' => 'ev-1', 'v' => 'a']);
+        $col->updateOne(['_id' => 'ev-1'], ['$set' => ['v' => 'b']]);
+        $col->deleteOne(['_id' => 'ev-1']);
+
+        $result = ['found_update' => false];
+        $deadline = \microtime(true) + 8.0;
+        while (! $result['found_update'] && \microtime(true) < $deadline) {
+            $stream->next();
+            if (! $stream->valid()) {
+                continue;
+            }
+
+            $ev = $stream->current();
+            if (($ev['operationType'] ?? null) !== 'update') {
+                continue;
+            }
+
+            $arr = \is_array($ev)
+                ? $ev
+                : (\method_exists($ev, 'getArrayCopy') ? $ev->getArrayCopy() : (array) $ev);
+            $result = [
+                'found_update' => true,
+                'fulldoc_key_present' => \array_key_exists('fullDocument', $arr),
+                'fulldoc_value' => $arr['fullDocument'] ?? 'ABSENT',
+            ];
+        }
+
+        return $result;
     }
 
     private function gridfs(object $db): array
