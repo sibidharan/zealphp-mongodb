@@ -30,19 +30,13 @@ use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 use function array_is_list;
 use function array_map;
 use function array_merge;
-use function base64_decode;
-use function base64_encode;
-use function count;
-use function dechex;
 use function get_debug_type;
 use function get_object_vars;
-use function hexdec;
 use function is_array;
 use function is_int;
 use function is_object;
 use function is_string;
 use function sprintf;
-use function str_pad;
 use function zealphp_mongodb_aggregate;
 use function zealphp_mongodb_aggregate_all;
 use function zealphp_mongodb_batch_result;
@@ -70,7 +64,6 @@ use function zealphp_mongodb_update_many;
 use function zealphp_mongodb_update_one;
 
 use const OPENSWOOLE_EVENT_READ;
-use const STR_PAD_LEFT;
 
 class Collection
 {
@@ -689,57 +682,10 @@ class Collection
             return new BSONArray($wrapped);
         }
 
-        $c = count($data);
-
-        if ($c === 1 && isset($data['$oid'])) {
-            return new ObjectId($data['$oid']);
-        }
-
-        if ($c === 1 && isset($data['$date'])) {
-            if (isset($data['$date']['$numberLong'])) {
-                return new UTCDateTime((int) $data['$date']['$numberLong']);
-            }
-
-            return new UTCDateTime((int) $data['$date']);
-        }
-
-        if ($c === 1 && isset($data['$numberDecimal'])) {
-            return new Decimal128($data['$numberDecimal']);
-        }
-
-        if ($c === 1 && isset($data['$binary'])) {
-            return new Binary(
-                base64_decode($data['$binary']['base64'] ?? ''),
-                (int) hexdec($data['$binary']['subType'] ?? '00'),
-            );
-        }
-
-        if ($c === 1 && isset($data['$regularExpression'])) {
-            return new Regex(
-                $data['$regularExpression']['pattern'] ?? '',
-                $data['$regularExpression']['options'] ?? '',
-            );
-        }
-
-        if ($c === 1 && isset($data['$timestamp'])) {
-            return new Timestamp(
-                $data['$timestamp']['i'] ?? 0,
-                $data['$timestamp']['t'] ?? 0,
-            );
-        }
-
-        if (isset($data['$code']) && ($c === 1 || ($c === 2 && isset($data['$scope'])))) {
-            return new Javascript($data['$code'], $data['$scope'] ?? null);
-        }
-
-        if ($c === 1 && isset($data['$minKey'])) {
-            return new MinKey();
-        }
-
-        if ($c === 1 && isset($data['$maxKey'])) {
-            return new MaxKey();
-        }
-
+        // No extended-JSON reconstruction here any more (#45): the ext returns a
+        // real MongoDB\BSON\* object for every genuine BSON value, so a plain
+        // array — even one keyed `$oid`/`$binary`/… — is a literal user
+        // sub-document and must be preserved as such, not turned into a BSON type.
         $wrapped = new BSONDocument();
         foreach ($data as $key => $value) {
             $wrapped[$key] = is_array($value) ? self::wrapDoc($value) : $value;
@@ -750,16 +696,13 @@ class Collection
 
     public static function prepareBSON(mixed $data): mixed
     {
-        if ($data instanceof ObjectId) {
-            return ['$oid' => $data->__toString()];
-        }
-
-        if ($data instanceof UTCDateTime) {
-            return ['$date' => ['$numberLong' => $data->__toString()]];
-        }
-
-        if ($data instanceof Regex) {
-            return ['$regularExpression' => ['pattern' => $data->getPattern(), 'options' => $data->getFlags()]];
+        // BSON value objects pass through UNCHANGED so the ext encodes them by
+        // class — a real ObjectId/UTCDateTime/Regex becomes the BSON type, while
+        // a plain array keyed `$oid`/`$date`/… stays a literal sub-document. The
+        // old extended-JSON array form was indistinguishable from user data and
+        // conflated the two (#45).
+        if ($data instanceof ObjectId || $data instanceof UTCDateTime || $data instanceof Regex) {
+            return $data;
         }
 
         if ($data instanceof BSONDocument) {
@@ -770,28 +713,31 @@ class Collection
             return self::prepareBSON($data->getArrayCopy());
         }
 
+        // The ZealPHP-namespace BSON value objects are normalized to their
+        // official MongoDB\BSON\* equivalents, which the ext encodes by class
+        // (#45). Note MongoDB\BSON\Timestamp's ctor is (increment, timestamp).
         if ($data instanceof Binary) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\Binary($data->getData(), $data->getType());
         }
 
         if ($data instanceof Decimal128) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\Decimal128((string) $data);
         }
 
         if ($data instanceof Timestamp) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\Timestamp($data->getIncrement(), $data->getTimestamp());
         }
 
         if ($data instanceof Javascript) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\Javascript($data->getCode(), $data->getScope());
         }
 
         if ($data instanceof MinKey) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\MinKey();
         }
 
         if ($data instanceof MaxKey) {
-            return $data->jsonSerialize();
+            return new \MongoDB\BSON\MaxKey();
         }
 
         if ($data instanceof Int64) {
@@ -808,48 +754,20 @@ class Collection
         }
 
         if ($data instanceof Type) {
-            // Official-namespace BSON value objects (real ext-mongodb classes
-            // OR the polyfill) — the drop-in contract means user code passes
-            // MongoDB\BSON\Binary / Timestamp / Decimal128 / MinKey / … here.
-            // Found by the parity rig: these previously fell into the generic
-            // object cast below and crashed on private props ("\0" keys).
-            // Mapped explicitly via getters to CANONICAL extended JSON v2:
-            // the polyfill's and C ext's jsonSerialize() speak the legacy v1
-            // dialect ({"\$binary": "..", "\$type": ".."}) which the Rust
-            // parser does not accept.
-            if ($data instanceof \MongoDB\BSON\Binary) {
-                return [
-                    '$binary' => [
-                        'base64' => base64_encode($data->getData()),
-                        'subType' => str_pad(dechex($data->getType()), 2, '0', STR_PAD_LEFT),
-                    ],
-                ];
-            }
-
-            if ($data instanceof \MongoDB\BSON\Decimal128) {
-                return ['$numberDecimal' => (string) $data];
-            }
-
-            if ($data instanceof \MongoDB\BSON\Timestamp) {
-                return ['$timestamp' => ['t' => $data->getTimestamp(), 'i' => $data->getIncrement()]];
-            }
-
-            if ($data instanceof \MongoDB\BSON\Javascript) {
-                $js = ['$code' => $data->getCode()];
-                $scope = $data->getScope();
-                if ($scope !== null) {
-                    $js['$scope'] = self::prepareBSON((array) $scope);
-                }
-
-                return $js;
-            }
-
-            if ($data instanceof \MongoDB\BSON\MinKey) {
-                return ['$minKey' => 1];
-            }
-
-            if ($data instanceof \MongoDB\BSON\MaxKey) {
-                return ['$maxKey' => 1];
+            // Official-namespace BSON value objects (real ext-mongodb classes OR
+            // the polyfill) pass through UNCHANGED — the ext encodes each by its
+            // class, which is what makes a literal user array keyed `$binary`/
+            // `$numberDecimal`/… unambiguous from a real BSON value (#45). They
+            // must NOT be flattened to extended-JSON arrays here.
+            if (
+                $data instanceof \MongoDB\BSON\Binary
+                || $data instanceof \MongoDB\BSON\Decimal128
+                || $data instanceof \MongoDB\BSON\Timestamp
+                || $data instanceof \MongoDB\BSON\Javascript
+                || $data instanceof \MongoDB\BSON\MinKey
+                || $data instanceof \MongoDB\BSON\MaxKey
+            ) {
+                return $data;
             }
 
             if ($data instanceof \MongoDB\BSON\Int64) {
