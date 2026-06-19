@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use MongoDB\Driver\Manager;
 use Stringable;
 
 use function array_map;
 use function array_merge;
 use function function_exists;
+use function http_build_query;
 use function is_array;
+use function is_bool;
+use function is_scalar;
+use function str_contains;
 use function zealphp_mongodb_close;
 use function zealphp_mongodb_connect;
 use function zealphp_mongodb_drop_database;
@@ -27,9 +32,48 @@ class Client implements Stringable
 
     private readonly int $poolId;
 
-    public function __construct(string|null $uri = 'mongodb://localhost:27017', array $uriOptions = [], array $driverOptions = [])
+    private readonly string $uri;
+
+    public function __construct(string|null $uri = 'mongodb://localhost:27017', private readonly array $uriOptions = [], private readonly array $driverOptions = [])
     {
-        $this->poolId = zealphp_mongodb_connect($uri);
+        // Retain the connection parameters instead of discarding them (#36) so
+        // getManager() can hand back an equivalent Manager and scalar uriOptions
+        // can be folded into the connection URI.
+        $this->uri = $uri ?? 'mongodb://localhost:27017';
+        $this->poolId = zealphp_mongodb_connect(self::mergeUriOptions($this->uri, $uriOptions));
+    }
+
+    /**
+     * Fold scalar uriOptions into the connection URI query string so they reach
+     * the driver (#36). Non-scalar options (e.g. tagSets) are left to a future
+     * pass.
+     *
+     * @param array<string, mixed> $uriOptions
+     */
+    private static function mergeUriOptions(string $uri, array $uriOptions): string
+    {
+        $scalars = [];
+        foreach ($uriOptions as $key => $value) {
+            if (! is_scalar($value)) {
+                continue;
+            }
+
+            $scalars[$key] = is_bool($value) ? ($value ? 'true' : 'false') : $value;
+        }
+
+        if ($scalars === []) {
+            return $uri;
+        }
+
+        return $uri . (str_contains($uri, '?') ? '&' : '?') . http_build_query($scalars);
+    }
+
+    /**
+     * The underlying MongoDB\Driver\Manager, like the official Client (#35).
+     */
+    public function getManager(): Manager
+    {
+        return new Manager($this->uri, $this->uriOptions, $this->driverOptions);
     }
 
     public function __get(string $name): Database
