@@ -93,6 +93,7 @@ final class ParityApi
             'bson_containers' => $this->bsonContainers($db),
             'client_manager' => $this->clientManager(),
             'concern_getters' => $this->concernGetters(),
+            'server_selection_timeout' => $this->serverSelectionTimeout(),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1244,6 +1245,34 @@ final class ParityApi
         return [
             'read_pref_mode' => $c->getReadPreference()->getModeString(),
             'write_concern_w' => $c->getWriteConcern()->getW(),
+        ];
+    }
+
+    /**
+     * serverSelectionTimeoutMS parity (cluster errors-options / #39): an op
+     * against an unreachable host must fail FAST (within the short timeout),
+     * not hang on the multi-second default. (192.0.2.0/24 is TEST-NET-1, which
+     * never routes.)
+     */
+    private function serverSelectionTimeout(): array
+    {
+        $class = $this->driver === 'rust' ? \ZealPHP\MongoDB\Client::class : \MongoDB\Client::class;
+        $client = new $class('mongodb://192.0.2.1:27017/', ['serverSelectionTimeoutMS' => 500]);
+        $col = $client->selectCollection('x', 'y');
+
+        $start = \microtime(true);
+        $failed = false;
+        try {
+            $col->insertOne(['a' => 1]);
+        } catch (\Throwable) {
+            $failed = true;
+        }
+
+        $elapsed = \microtime(true) - $start;
+
+        return [
+            'failed' => $failed,
+            'failed_within_5s' => $elapsed < 5.0,
         ];
     }
 }
