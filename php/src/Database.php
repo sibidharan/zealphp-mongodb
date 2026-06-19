@@ -22,6 +22,9 @@ class Database implements Stringable
         private int $poolId,
         private string $databaseName,
         private array $options = [],
+        // Keeps the owning Client alive while this Database (and Collections
+        // derived from it) are referenced — see Collection (#13).
+        private readonly object|null $owner = null,
     ) {
     }
 
@@ -32,7 +35,7 @@ class Database implements Stringable
 
     public function selectCollection(string $collectionName, array $options = []): Collection
     {
-        return new Collection($this->poolId, $this->databaseName, $collectionName, $options);
+        return new Collection($this->poolId, $this->databaseName, $collectionName, $options, $this);
     }
 
     public function getCollection(string $collectionName, array $options = []): Collection

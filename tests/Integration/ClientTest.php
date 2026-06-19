@@ -16,6 +16,7 @@ use ZealPHP\MongoDB\Session;
 use ZealPHP\MongoDB\WriteConcern;
 
 use function extension_loaded;
+use function gc_collect_cycles;
 use function getenv;
 use function uniqid;
 
@@ -50,6 +51,26 @@ class ClientTest extends TestCase
     {
         $db = self::$client->selectDatabase('test');
         $this->assertInstanceOf(Database::class, $db);
+    }
+
+    /**
+     * #13: the chained `(new Client($uri))->selectCollection(...)` idiom must
+     * keep working — the temporary Client must not close the shared pool when
+     * garbage-collected, because the returned Collection still needs it.
+     */
+    public function testChainedTempClientPoolSurvivesGc(): void
+    {
+        $uri = getenv('MONGODB_URI') ?: 'mongodb://db.selfmade.ninja:27017';
+        $db = getenv('MONGODB_DATABASE') ?: 'zealphp_test';
+
+        // The temporary Client is now referenced only via the Collection's owner.
+        $col = (new Client($uri))->selectCollection($db, 'chain_' . uniqid());
+        gc_collect_cycles();
+
+        // Before the fix, the temp Client's __destruct closed the pool here.
+        $col->insertOne(['_id' => 1, 'v' => 'ok']);
+        $this->assertSame(1, $col->countDocuments(['_id' => 1]));
+        $col->drop();
     }
 
     public function testMagicGetDatabase(): void
