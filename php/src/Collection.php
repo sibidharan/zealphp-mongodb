@@ -6,6 +6,8 @@ namespace ZealPHP\MongoDB;
 
 use JsonSerializable;
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\PackedArray;
+use MongoDB\BSON\Persistable;
 use MongoDB\BSON\Regex;
 use MongoDB\BSON\Type;
 use MongoDB\BSON\UTCDateTime;
@@ -803,6 +805,22 @@ class Collection
             if ($data instanceof JsonSerializable) {
                 return self::prepareBSON($data->jsonSerialize());
             }
+        }
+
+        // Raw BSON containers (#70): store their actual fields/elements, not the
+        // opaque {data:…} blob the generic object path produced.
+        if ($data instanceof \MongoDB\BSON\Document || $data instanceof PackedArray) {
+            return self::prepareBSON($data->toPHP());
+        }
+
+        // Persistable (#69): persist bsonSerialize() PLUS the __pclass marker
+        // (Binary subtype 0x80 holding the class name) so the document can be
+        // reconstructed to its class on read, exactly like the official driver.
+        if ($data instanceof Persistable) {
+            $serialized = (array) $data->bsonSerialize();
+            $serialized['__pclass'] = new \MongoDB\BSON\Binary($data::class, 0x80);
+
+            return self::prepareBSON($serialized);
         }
 
         if (is_object($data)) {
