@@ -40,6 +40,7 @@ use function hexdec;
 use function is_array;
 use function is_int;
 use function is_object;
+use function is_string;
 use function sprintf;
 use function str_pad;
 use function zealphp_mongodb_aggregate;
@@ -490,15 +491,57 @@ class Collection
             throw new InvalidArgumentException('$indexes is empty');
         }
 
+        // Route through the batched `createIndexes` command (one round-trip) so
+        // the top-level $options the official driver forwards actually apply —
+        // they were silently dropped when this looped over per-index createIndex
+        // calls (#59). The returned name list still matches the official driver
+        // exactly, via the same generateIndexName algorithm.
+        $specs = [];
         $names = [];
         foreach ($indexes as $idx) {
-            $key = $idx['key'] ?? [];
-            $idxOpts = $idx;
-            unset($idxOpts['key']);
-            $names[] = $this->createIndex($key, $idxOpts);
+            $idx = (array) $idx;
+            $key = (array) ($idx['key'] ?? []);
+            if ($key === []) {
+                throw new InvalidArgumentException('"key" is required for each index');
+            }
+
+            $name = isset($idx['name']) && is_string($idx['name']) ? $idx['name'] : self::generateIndexName($key);
+            $idx['name'] = $name;
+            $idx['key'] = self::prepareBSON($key);
+            $specs[] = $idx;
+            $names[] = $name;
         }
 
+        $cmd = ['createIndexes' => $this->colName, 'indexes' => $specs];
+        foreach (['commitQuorum', 'writeConcern', 'comment', 'maxTimeMS'] as $key) {
+            if (! isset($options[$key])) {
+                continue;
+            }
+
+            $cmd[$key] = $options[$key];
+        }
+
+        self::guard(fn () => zealphp_mongodb_run_command($this->poolId, $this->dbName, $cmd));
+
         return $names;
+    }
+
+    /**
+     * Generate an index name from a key spec the same way the official driver's
+     * IndexInput does: each `field_<order>` pair joined by `_` (e.g. a key of
+     * {x:1, y:-1} yields "x_1_y_-1"). Keeps createIndexes' returned names
+     * byte-identical to mongodb/mongodb (#59).
+     *
+     * @param array<string, mixed> $key
+     */
+    private static function generateIndexName(array $key): string
+    {
+        $name = '';
+        foreach ($key as $field => $type) {
+            $name .= ($name !== '' ? '_' : '') . $field . '_' . $type;
+        }
+
+        return $name;
     }
 
     public function withOptions(array $options = []): self
