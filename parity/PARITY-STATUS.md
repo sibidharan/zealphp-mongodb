@@ -15,11 +15,11 @@ value-comparison rig* rather than papered over.
 
 ## Headline
 
-- **60 of 67** issues closed by PRs **#72–#112**, each with a rig op that
-  reproduces the bug and now passes. The rig runs **45 op groups, all
+- **61 of 67** issues closed by PRs **#72–#113**, each with a rig op that
+  reproduces the bug and now passes. The rig runs **46 op groups, all
   byte-identical** across the C (`ext-mongodb` + `mongodb/mongodb`) and Rust
   (`zealphp_mongodb`) stacks.
-- **7 remain open**, grouped below by *why* the value-comparison rig can't close
+- **6 remain open**, grouped below by *why* the value-comparison rig can't close
   them. None is a silent gap — each has a documented reason and a sketch of what
   closing it would take.
 - The original production defect — the `Cursor::toArray()` native-handle leak
@@ -45,11 +45,11 @@ test):
 | Transactions | #20, #21, #60, #61, #62 | `txn_state`, `txn_commit`, `txn_invalid_read_concern`, `txn_unsat_write_concern` |
 | Change streams | #24, #25, #26, #63, #64, #65 | `change_stream`, `cs_fields`, `cs_invalidate` |
 | GridFS | #29, #30, #66, #68 | `gridfs`, `gridfs_meta_omit` |
-| Server selection | #39 | `server_selection_timeout` |
+| Server selection | #39, #67 | `server_selection_timeout`, `read_pref_routing` |
 
 ---
 
-## Remaining open (7) — and exactly why
+## Remaining open (6) — and exactly why
 
 These are grouped by the *category of obstacle*, because the obstacle is the
 actionable part: it tells the next maintainer what infrastructure or design
@@ -95,7 +95,7 @@ byte-identical result is not expressible without re-architecting that model.
   race that cannot be staged deterministically in a value-comparison rig (the
   two stacks would observe different interleavings).
 
-### C. Not producible / not observable from the PHP value surface (3)
+### C. Not producible / not observable from the PHP value surface (2)
 
 The dual-rig drives *both* drivers from PHP. If a value can't be produced from
 PHP, or two correct behaviours yield the same observable value, the rig has no
@@ -114,22 +114,17 @@ divergence to catch.
   ambiguity); fixing it means replacing the encoding channel, not a value tweak.
   Extremely rare in real documents.
 
-- **#67 — per-operation readPreference routing ignored.** The *primary*
-  behaviour is value-invariant: a secondary returns the **same replicated data**
-  as the primary, so routing-to-a-secondary cannot be caught by comparing return
-  values — even with a multi-node set, you'd need server-introspection (which
-  member served the read), which the value rig doesn't capture. The one
-  *observable* facet — an unsatisfiable preference erroring — is reachable but
-  needs a real build-out, scoped here so it isn't mistaken for a one-liner:
-  (1) forward `readPreference` into `FindOptions.selection_criteria` in the ext
-  (a `bson::from_document::<SelectionCriteria>` of `{mode: …}` — straightforward);
-  (2) route the deferred-cursor find path through `ErrorMapper` (it currently
-  isn't guarded); (3) reconcile the exception class — a server-selection timeout
-  is a `ConnectionTimeoutException` on libmongoc but `ErrorKind::ServerSelection`
-  → `RuntimeException` on the Rust driver, so `errconv`/`ErrorMapper` need a new
-  mapping; and (4) drive it from a **non-`directConnection`** client (the rig URI
-  pins `directConnection=true`, which bypasses selection on the single-node set).
-  Each piece is known; together they're a focused follow-up, not a quick fix.
+> **#67 — per-operation readPreference routing — CLOSED (PR #113).** Listed here
+> in the previous revision as a "focused follow-up"; that follow-up has now been
+> carried out, exactly as scoped: the ext forwards `readPreference` into
+> `FindOptions.selection_criteria`, the deferred-cursor find path is routed
+> through `ErrorMapper`, `errconv`/`ErrorMapper` gained a `serverselection` kind
+> → `ConnectionTimeoutException` (code 13053), and the `read_pref_routing` rig op
+> drives it from a non-`directConnection` client. Both drivers now throw
+> `ConnectionTimeoutException` code 13053 on an unsatisfiable secondary
+> preference — 46/46 ops identical. (The deeper *routing-to-a-secondary* remains
+> value-invariant by nature — a secondary returns the same replicated data — so
+> the rig proves the observable facet, the unsatisfiable-preference error.)
 
 ---
 
@@ -139,7 +134,8 @@ This scorecard is itself living proof of the loop: #60 and #61 started in
 category C of an earlier revision ("deep transaction internals, not cleanly
 rig-expressible") and were then closed by forwarding the concerns through the
 ext and reconciling the commit-time write-concern exception class — exactly the
-"here's what it would take" sketch, carried out. When you close one of the seven,
+"here's what it would take" sketch, carried out (and #67 right after, the same
+way). When you close one of the six,
 follow `METHODOLOGY.md`: add the op that
 reproduces it, get `VERDICT: FULL PARITY ✓`, and move its row from "remaining" to
 "fixed" here. When you decide one is genuinely out of scope, keep it in its

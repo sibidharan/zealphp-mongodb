@@ -100,6 +100,7 @@ final class ParityApi
             'gridfs_meta_omit' => $this->gridfsMetaOmit($db),
             'txn_invalid_read_concern' => $this->txnInvalidReadConcern($db),
             'txn_unsat_write_concern' => $this->txnUnsatWriteConcern($db),
+            'read_pref_routing' => $this->readPrefRouting(),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -415,6 +416,32 @@ final class ParityApi
             'dup_key' => $this->captureError(static fn () => $col->insertOne(['_id' => 1, 'v' => 'dup'])),
             'bad_command' => $this->captureError(static fn () => $db->command(['thisIsNotARealCommand' => 1])),
         ];
+    }
+
+    /**
+     * Per-operation readPreference routing (#67): an UNSATISFIABLE preference
+     * (secondary, on a primary-only single-node set) must fail server selection
+     * — the old zeal silently ignored the preference and read the primary. The
+     * rig's default client pins directConnection=true, which bypasses routing,
+     * so this builds a non-direct client with a short serverSelectionTimeoutMS.
+     */
+    private function readPrefRouting(): array
+    {
+        $nonDirect = \str_replace(
+            ['&directConnection=true', 'directConnection=true&', 'directConnection=true'],
+            '',
+            $this->uri,
+        );
+        $nonDirect .= (\str_contains($nonDirect, '?') ? '&' : '?') . 'serverSelectionTimeoutMS=2000';
+
+        $class = $this->driver === 'rust' ? \ZealPHP\MongoDB\Client::class : \MongoDB\Client::class;
+        $client = new $class($nonDirect);
+        $col = $client->selectCollection('parity_' . $this->driver, 'rp');
+        $col->insertOne(['k' => 'seed']);
+
+        $rp = $this->driver === 'c' ? new \MongoDB\Driver\ReadPreference('secondary') : ['mode' => 'secondary'];
+
+        return ['secondary_pref' => $this->captureError(static fn () => $col->find([], ['readPreference' => $rp])->toArray())];
     }
 
     /**

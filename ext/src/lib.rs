@@ -63,6 +63,15 @@ fn parse_collation(arr: &ZendHashTable) -> Option<mongodb::options::Collation> {
     bson::from_document::<mongodb::options::Collation>(doc).ok()
 }
 
+/// Build a SelectionCriteria from a PHP `readPreference` option (a `{mode: …}`
+/// document) so per-operation read routing actually takes effect — and an
+/// unsatisfiable preference surfaces as a server-selection error (#67).
+fn parse_read_preference(arr: &ZendHashTable) -> Option<mongodb::options::SelectionCriteria> {
+    let v = arr.get("readPreference")?;
+    let doc = bson_convert::php_to_doc(v).ok()?;
+    bson::from_document::<mongodb::options::SelectionCriteria>(doc).ok()
+}
+
 fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
     let mut fo = mongodb::options::FindOptions::default();
     if let Some(z) = opts {
@@ -78,6 +87,7 @@ fn parse_find_options(opts: Option<&Zval>) -> mongodb::options::FindOptions {
                 if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
                 if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
                 if let Some(c) = parse_collation(arr) { fo.collation = Some(c); }
+                if let Some(sc) = parse_read_preference(arr) { fo.selection_criteria = Some(sc); }
             }
         }
     }
@@ -97,6 +107,7 @@ fn parse_find_one_options(opts: Option<&Zval>) -> mongodb::options::FindOneOptio
                 if let Some(v) = arr.get("max") { if let Ok(d) = bson_convert::php_to_doc(v) { fo.max = Some(d); } }
                 if let Some(v) = arr.get("maxTimeMS") { if let Some(ms) = v.long() { fo.max_time = Some(std::time::Duration::from_millis(ms as u64)); } }
                 if let Some(c) = parse_collation(arr) { fo.collation = Some(c); }
+                if let Some(sc) = parse_read_preference(arr) { fo.selection_criteria = Some(sc); }
             }
         }
     }

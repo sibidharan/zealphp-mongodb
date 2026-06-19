@@ -6,6 +6,7 @@ namespace ZealPHP\MongoDB\Exception;
 
 use MongoDB\Driver\Exception\BulkWriteException;
 use MongoDB\Driver\Exception\CommandException;
+use MongoDB\Driver\Exception\ConnectionTimeoutException;
 use MongoDB\Driver\Exception\Exception as DriverException;
 use MongoDB\Driver\Exception\RuntimeException as DriverRuntimeException;
 use MongoDB\Driver\WriteError;
@@ -85,6 +86,7 @@ final class ErrorMapper
                     new WriteResult(0, 0, 0, 0, 0, null, $writeErrors),
                 ),
             'command' => new CommandException($errmsg, $code, $e),
+            'serverselection' => new ConnectionTimeoutException($errmsg !== '' ? $errmsg : $message, $code, $e),
             default   => new DriverRuntimeException($errmsg !== '' ? $errmsg : $message, $code, $e),
         };
     }
