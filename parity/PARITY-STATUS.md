@@ -15,11 +15,11 @@ value-comparison rig* rather than papered over.
 
 ## Headline
 
-- **61 of 67** issues closed by PRs **#72–#113**, each with a rig op that
-  reproduces the bug and now passes. The rig runs **46 op groups, all
+- **62 of 67** issues closed by PRs **#72–#114**, each with a rig op that
+  reproduces the bug and now passes. The rig runs **47 op groups, all
   byte-identical** across the C (`ext-mongodb` + `mongodb/mongodb`) and Rust
   (`zealphp_mongodb`) stacks.
-- **6 remain open**, grouped below by *why* the value-comparison rig can't close
+- **5 remain open**, grouped below by *why* the value-comparison rig can't close
   them. None is a silent gap — each has a documented reason and a sketch of what
   closing it would take.
 - The original production defect — the `Cursor::toArray()` native-handle leak
@@ -43,13 +43,13 @@ test):
 | Indexes | #18, #56, #57, #58, #59 | `index_flags`, `drop_index_info`, `create_indexes_opts` |
 | Admin / client | #31, #32, #33, #34, #35, #36, #71 | `create_coll`, `concern_getters`, `db_info`, `client_manager`, `list_filter` |
 | Transactions | #20, #21, #60, #61, #62 | `txn_state`, `txn_commit`, `txn_invalid_read_concern`, `txn_unsat_write_concern` |
-| Change streams | #24, #25, #26, #63, #64, #65 | `change_stream`, `cs_fields`, `cs_invalidate` |
+| Change streams | #23, #24, #25, #26, #63, #64, #65 | `change_stream`, `cs_fields`, `cs_invalidate`, `cs_fulldoc_deleted` |
 | GridFS | #29, #30, #66, #68 | `gridfs`, `gridfs_meta_omit` |
 | Server selection | #39, #67 | `server_selection_timeout`, `read_pref_routing` |
 
 ---
 
-## Remaining open (6) — and exactly why
+## Remaining open (5) — and exactly why
 
 These are grouped by the *category of obstacle*, because the obstacle is the
 actionable part: it tells the next maintainer what infrastructure or design
@@ -76,7 +76,7 @@ compare.
   identically to the C driver (which is what the rig proves). The official
   driver's async is a *different axis*, not a behaviour the same code exercises.
 
-### B. Architecturally divergent from zeal's stream model (2)
+### B. Architecturally divergent from zeal's stream model (1)
 
 The official behaviour assumes an internal model zeal does not share, so a
 byte-identical result is not expressible without re-architecting that model.
@@ -89,11 +89,14 @@ byte-identical result is not expressible without re-architecting that model.
   requires replacing zeal's buffer-until-close stream model with a chunk-as-you-go
   wrapper — a GridFS rewrite, not a method addition.
 
-- **#23 — `fullDocument: updateLookup` omits the key when the doc was deleted
-  before lookup.** Reproducing this needs an update event whose target document
-  is deleted *in the window* before the change stream resolves the lookup — a
-  race that cannot be staged deterministically in a value-comparison rig (the
-  two stacks would observe different interleavings).
+> **#23 — `fullDocument: updateLookup` on a deleted doc — CLOSED (PR #114).**
+> Previously parked here as a "race." That was wrong: `updateLookup` resolves
+> when the update event is *read*, not when it occurs — so deleting the target
+> before iterating makes it fully deterministic. The `cs_fulldoc_deleted` op
+> does exactly that and both drivers return an explicit `fullDocument: null`
+> (zeal's raw change-event docs from #96 already carry the server's null;
+> 47/47 ops identical). A reminder that "non-deterministic" deserves a probe
+> before it's accepted as a reason.
 
 ### C. Not producible / not observable from the PHP value surface (2)
 
@@ -143,7 +146,8 @@ category C of an earlier revision ("deep transaction internals, not cleanly
 rig-expressible") and were then closed by forwarding the concerns through the
 ext and reconciling the commit-time write-concern exception class — exactly the
 "here's what it would take" sketch, carried out (and #67 right after, the same
-way). When you close one of the six,
+way; and #23 right after, once its "race" turned out to be a probe-able
+determinism). When you close one of the five,
 follow `METHODOLOGY.md`: add the op that
 reproduces it, get `VERDICT: FULL PARITY ✓`, and move its row from "remaining" to
 "fixed" here. When you decide one is genuinely out of scope, keep it in its
