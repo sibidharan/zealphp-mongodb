@@ -79,6 +79,7 @@ final class ParityApi
             'cs_fields' => $this->changeStreamFields($db),
             'cs_invalidate' => $this->changeStreamInvalidate($db),
             'aggregate_opts' => $this->aggregateOpts($db),
+            'bson_containers' => $this->bsonContainers($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1175,6 +1176,34 @@ final class ParityApi
             'collation_count' => \count($withColl),
             'no_collation_count' => \count($noColl),
             'let_count' => \count($withLet),
+        ];
+    }
+
+    /**
+     * Raw-BSON-container + Persistable parity (cluster BSON / #70, #69): a
+     * MongoDB\BSON\Document / PackedArray must store its real fields (queryable),
+     * not an opaque blob; a Persistable must persist __pclass.
+     */
+    private function bsonContainers(object $db): array
+    {
+        $col = $db->selectCollection('bsonctn');
+        try {
+            $col->drop();
+        } catch (\Throwable) {
+            // first run
+        }
+
+        $col->insertOne(['_id' => 1, 'embedded' => \MongoDB\BSON\Document::fromPHP(['a' => 1, 'b' => ['c' => 2]])]);
+        $col->insertOne(['_id' => 2, 'list' => \MongoDB\BSON\PackedArray::fromPHP([10, 20, 30])]);
+        $col->insertOne(['_id' => 3, 'person' => new ParityPersistable('Alice')]);
+
+        $raw = $col->findOne(['_id' => 3], ['typeMap' => ['root' => 'array', 'document' => 'array', 'array' => 'array']]);
+
+        return [
+            'document_queryable' => $col->countDocuments(['embedded.a' => 1]),
+            'packedarray_queryable' => $col->countDocuments(['list' => 20]),
+            'persistable_name' => $raw['person']['name'] ?? null,
+            'persistable_has_pclass' => isset($raw['person']['__pclass']),
         ];
     }
 }
