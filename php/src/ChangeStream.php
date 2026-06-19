@@ -88,11 +88,13 @@ class ChangeStream implements Iterator
             $opts[$k] = $options[$k];
         }
 
-        foreach (['resumeAfter', 'startAfter'] as $k) {
+        foreach (['resumeAfter', 'startAfter', 'startAtOperationTime'] as $k) {
             if (! isset($options[$k])) {
                 continue;
             }
 
+            // startAtOperationTime is a Timestamp ({t,i}); resumeAfter/startAfter
+            // are resume tokens. All reach the ext as documents (#25).
             $opts[$k] = Collection::prepareBSON((array) $options[$k]);
         }
 
