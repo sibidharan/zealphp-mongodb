@@ -219,7 +219,9 @@ class Collection
             // Session reads (transactions) collect eagerly — the driver-side
             // SessionCursor needs the same session borrowed per batch, so the
             // ext drains it inside one call. Bounded by the txn snapshot.
-            $docs = zealphp_mongodb_find_all($this->poolId, $this->dbName, $this->colName, $filter, $opts);
+            // guard() so a server rejection (e.g. an invalid transaction
+            // readConcern, #61) surfaces as a typed CommandException.
+            $docs = self::guard(fn () => zealphp_mongodb_find_all($this->poolId, $this->dbName, $this->colName, $filter, $opts));
 
             return new ArrayCursor($docs);
         }

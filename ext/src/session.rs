@@ -57,6 +57,8 @@ pub fn resolve(session_id: Option<i64>) -> Result<Option<SharedSession>, String>
 
 pub struct TxnOptions {
     pub max_commit_time_ms: Option<u64>,
+    pub read_concern: Option<mongodb::options::ReadConcern>,
+    pub write_concern: Option<mongodb::options::WriteConcern>,
 }
 
 pub fn start_transaction(session_id: u64, opts: TxnOptions) -> Result<(), String> {
@@ -66,6 +68,15 @@ pub fn start_transaction(session_id: u64, opts: TxnOptions) -> Result<(), String
         let mut action = guard.start_transaction();
         if let Some(ms) = opts.max_commit_time_ms {
             action = action.max_commit_time(std::time::Duration::from_millis(ms));
+        }
+        // Forward the transaction's readConcern / writeConcern so the server
+        // validates them at the first op / commit, instead of silently dropping
+        // them (#61 invalid readConcern level; #60 unsatisfiable writeConcern).
+        if let Some(rc) = opts.read_concern {
+            action = action.read_concern(rc);
+        }
+        if let Some(wc) = opts.write_concern {
+            action = action.write_concern(wc);
         }
         action.await
     })
