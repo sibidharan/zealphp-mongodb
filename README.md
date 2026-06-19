@@ -100,7 +100,7 @@ sudo cp target/release/libzealphp_mongodb.so $(php -r "echo ini_get('extension_d
 echo "extension=zealphp_mongodb.so" | sudo tee $(php --ini | grep "Scan for" | cut -d: -f2 | tr -d ' ')/99-zealphp-mongodb.ini
 
 # Verify
-php -r "echo zealphp_mongodb_version();"  # should print 0.2.5
+php -r "echo zealphp_mongodb_version();"  # should print 0.3.3
 ```
 
 ### Docker
