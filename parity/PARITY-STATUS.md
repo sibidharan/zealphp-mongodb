@@ -103,9 +103,17 @@ divergence to catch.
 
 - **#54 — legacy BSON `Symbol`/`Undefined`/`DBPointer` nulled on read.** These
   types **cannot be constructed from PHP** (neither `ext-mongodb` nor zeal exposes
-  constructors; they only arise from legacy on-disk data). The rig cannot
-  *produce* them to compare. Closing it needs a fixture of pre-seeded legacy BSON
-  injected below the PHP layer, plus read-path decoders on the Rust side.
+  constructors; they only arise from legacy on-disk data). Investigated to a full
+  sketch: the Rust `bson` crate *can* construct `Bson::Symbol`/`Undefined`/
+  `DbPointer`, so a test-only ext seed could inject them — but only the **zeal**
+  endpoint can run that seed (the C endpoint has no way to write these types), and
+  the rig fires the two endpoints independently, so a "seed-then-read" op would
+  **race** and could report *false* parity. Beyond the seed, closing it needs
+  three new PHP BSON classes, Rust→PHP object instantiation on the read hot path,
+  and matching Normalizer rules — for types deprecated since ~2010 with
+  effectively zero real-world occurrence. A racy, hot-path change for dead types
+  is exactly the disproportionate, hard-to-verify work the methodology says to
+  *not* ship as a "fix." Documented, not faked.
 
 - **#45 — Extended-JSON sentinel conflation.** A literal user sub-document whose
   single key is `$oid`/`$date`/`$numberDecimal`/… is indistinguishable from an
