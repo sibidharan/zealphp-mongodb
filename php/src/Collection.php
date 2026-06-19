@@ -78,6 +78,12 @@ class Collection
         private string $dbName,
         private string $colName,
         private array $options = [],
+        // Keeps the owning Client (which owns the connection pool) alive for as
+        // long as this Collection is referenced, so the chained
+        // `(new Client($uri))->selectCollection(...)` idiom doesn't get its pool
+        // closed when the temporary Client is garbage-collected (#13). Leak-safe:
+        // the pool still closes once the last derived object is gone.
+        private readonly object|null $owner = null,
     ) {
     }
 

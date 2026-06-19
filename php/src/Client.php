@@ -53,7 +53,7 @@ class Client implements Stringable
 
     public function selectDatabase(string $databaseName, array $options = []): Database
     {
-        return new Database($this->poolId, $databaseName, $options);
+        return new Database($this->poolId, $databaseName, $options, $this);
     }
 
     public function getDatabase(string $databaseName, array $options = []): Database
@@ -63,7 +63,7 @@ class Client implements Stringable
 
     public function selectCollection(string $databaseName, string $collectionName, array $options = []): Collection
     {
-        return new Collection($this->poolId, $databaseName, $collectionName, $options);
+        return new Collection($this->poolId, $databaseName, $collectionName, $options, $this);
     }
 
     public function getCollection(string $databaseName, string $collectionName, array $options = []): Collection
