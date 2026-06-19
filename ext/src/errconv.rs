@@ -12,7 +12,8 @@
 //!
 //!   \x01WE\x01<index>\x01<code>\x01<codeName>\x01<errmsg>
 //!
-//! `kind` is one of: command | write | writeconcern | other. Non-server
+//! `kind` is one of: command | write | writeconcern | serverselection |
+//! other. Non-server
 //! errors (validation, pool, bson) never carry the sentinel and pass through
 //! to PHP unchanged.
 
@@ -62,6 +63,12 @@ pub fn encode_mongo_error(e: &Error) -> String {
             }
             ("write", top, String::new(), recs)
         }
+
+        // An unsatisfiable read preference / no-suitable-server is a server
+        // selection failure; the official driver surfaces it as a
+        // ConnectionTimeoutException carrying libmongoc's server-selection
+        // error code 13053 (#67).
+        ErrorKind::ServerSelection { .. } => ("serverselection", 13053, String::new(), Vec::new()),
 
         _ => ("other", 0, String::new(), Vec::new()),
     };

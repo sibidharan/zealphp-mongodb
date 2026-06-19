@@ -6,6 +6,8 @@ namespace ZealPHP\MongoDB;
 
 use Iterator;
 use MongoDB\Model\BSONDocument;
+use Throwable;
+use ZealPHP\MongoDB\Exception\ErrorMapper;
 use ZealPHP\MongoDB\Exception\LogicException;
 
 use function array_map;
@@ -46,8 +48,15 @@ class Cursor implements Iterator
             return;
         }
 
-        $q              = $this->deferredQuery;
-        $this->cursorId = zealphp_mongodb_find($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
+        $q = $this->deferredQuery;
+        // Opening the cursor runs the find (server selection + first batch);
+        // map a server-side failure — e.g. an unsatisfiable readPreference
+        // (#67) — to the typed exception the official driver throws.
+        try {
+            $this->cursorId = zealphp_mongodb_find($q['poolId'], $q['db'], $q['col'], $q['filter'], $q['opts']);
+        } catch (Throwable $e) {
+            throw ErrorMapper::map($e);
+        }
     }
 
     public function current(): BSONDocument|Document|array|null
@@ -105,7 +114,13 @@ class Cursor implements Iterator
 
             $opts = $q['opts'] ?? [];
 
-            $raw = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
+            // Map a server-side failure (e.g. an unsatisfiable readPreference,
+            // #67) to the typed exception the official driver throws.
+            try {
+                $raw = zealphp_mongodb_find_all($q['poolId'], $q['db'], $q['col'], $q['filter'], $opts) ?: [];
+            } catch (Throwable $e) {
+                throw ErrorMapper::map($e);
+            }
 
             return array_map(
                 static fn ($doc) => is_array($doc) ? Collection::wrapDoc($doc) : $doc,
