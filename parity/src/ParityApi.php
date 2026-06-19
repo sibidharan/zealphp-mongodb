@@ -96,6 +96,7 @@ final class ParityApi
             'server_selection_timeout' => $this->serverSelectionTimeout(),
             'create_indexes_opts' => $this->createIndexesOpts($db),
             'map_reduce_parity' => $this->mapReduceParity($db),
+            'index_conflict' => $this->indexConflict($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -410,6 +411,27 @@ final class ParityApi
         return [
             'dup_key' => $this->captureError(static fn () => $col->insertOne(['_id' => 1, 'v' => 'dup'])),
             'bad_command' => $this->captureError(static fn () => $db->command(['thisIsNotARealCommand' => 1])),
+        ];
+    }
+
+    /**
+     * createIndex conflict parity (#55): creating an index whose NAME already
+     * exists with a DIFFERENT key spec is an IndexKeySpecsConflict the official
+     * driver throws on — the old zeal swallowed it and returned a bogus
+     * "_existing" string, falsely reporting an index that was never created.
+     * Re-creating the IDENTICAL index is idempotent and must return the real
+     * name on both drivers.
+     */
+    private function indexConflict(object $db): array
+    {
+        $col = $db->selectCollection('ixc');
+        $col->drop();
+        $col->insertOne(['a' => 1, 'b' => 2]);
+        $col->createIndex(['a' => 1], ['name' => 'dup']);
+
+        return [
+            'conflict' => $this->captureError(static fn () => $col->createIndex(['b' => 1], ['name' => 'dup'])),
+            'idempotent' => $col->createIndex(['a' => 1], ['name' => 'dup']),
         ];
     }
 

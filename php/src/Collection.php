@@ -354,7 +354,10 @@ class Collection
         $key = self::prepareBSON((array) $key);
         $opts = $options ?: null; // index options — no session threading
 
-        return zealphp_mongodb_create_index($this->poolId, $this->dbName, $this->colName, $key, $opts);
+        // Route through guard() so a server-side index conflict surfaces as a
+        // typed CommandException (code 86) like the official driver, not a bare
+        // \Exception — pairs with the ext no longer swallowing it (#55).
+        return self::guard(fn () => zealphp_mongodb_create_index($this->poolId, $this->dbName, $this->colName, $key, $opts));
     }
 
     public function insertMany(array $documents, array $options = []): InsertManyResult

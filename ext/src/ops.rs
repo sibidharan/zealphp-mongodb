@@ -194,17 +194,16 @@ pub fn create_index(
     }
     let index_model = mongodb::IndexModel::builder().keys(keys).options(idx_opts).build();
     coroutine::run_sync(async move {
-        match collection.create_index(index_model).await {
-            Ok(r) => Ok(r.index_name),
-            Err(e) => {
-                let err_str = e.to_string();
-                if err_str.contains("IndexOptionsConflict") || err_str.contains("already exists") {
-                    Ok("_existing".to_string())
-                } else {
-                    Err(e)
-                }
-            }
-        }
+        // Let every error propagate (#55). Re-creating an *identical* index is
+        // idempotent server-side and returns Ok with the real name, so this
+        // branch only ever fired on a genuine conflict (IndexOptionsConflict /
+        // IndexKeySpecsConflict) — which the official driver THROWS on. The old
+        // swallow returned a bogus "_existing" string, falsely reporting an
+        // index that was never created.
+        collection
+            .create_index(index_model)
+            .await
+            .map(|r| r.index_name)
     })
 }
 
