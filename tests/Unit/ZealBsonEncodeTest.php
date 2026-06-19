@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB\Tests\Unit;
 
+use MongoDB\BSON\Binary as OfficialBinary;
+use MongoDB\BSON\Decimal128 as OfficialDecimal128;
+use MongoDB\BSON\Javascript as OfficialJavascript;
+use MongoDB\BSON\MaxKey as OfficialMaxKey;
+use MongoDB\BSON\MinKey as OfficialMinKey;
+use MongoDB\BSON\Timestamp as OfficialTimestamp;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\BSON\Binary;
 use ZealPHP\MongoDB\BSON\Decimal128;
@@ -15,24 +21,26 @@ use ZealPHP\MongoDB\BSON\Timestamp;
 use ZealPHP\MongoDB\Collection;
 
 /**
- * #6: the ZealPHP\MongoDB\BSON\* value objects must encode through prepareBSON
- * to extended JSON the Rust ext understands — returning the object unchanged
- * (the bug) means the ext can't serialize it and the value is lost.
+ * #6 / #45: the ZealPHP\MongoDB\BSON\* value objects must encode through
+ * prepareBSON to a real BSON value the ext understands. Since #45 that is the
+ * official MongoDB\BSON\* object (which the ext encodes by class) rather than an
+ * extended-JSON array — returning the value lost (the original #6 bug) or
+ * flattening to a collidable array (the #45 bug) are both wrong.
  */
 class ZealBsonEncodeTest extends TestCase
 {
     public function testBinaryEncodes(): void
     {
         $r = Collection::prepareBSON(new Binary('hello', 0));
-        $this->assertIsArray($r);
-        $this->assertArrayHasKey('$binary', $r);
+        $this->assertInstanceOf(OfficialBinary::class, $r);
+        $this->assertSame('hello', $r->getData());
     }
 
     public function testDecimal128Encodes(): void
     {
         $r = Collection::prepareBSON(new Decimal128('3.14'));
-        $this->assertIsArray($r);
-        $this->assertArrayHasKey('$numberDecimal', $r);
+        $this->assertInstanceOf(OfficialDecimal128::class, $r);
+        $this->assertSame('3.14', (string) $r);
     }
 
     public function testInt64Encodes(): void
@@ -43,20 +51,21 @@ class ZealBsonEncodeTest extends TestCase
     public function testJavascriptEncodes(): void
     {
         $r = Collection::prepareBSON(new Javascript('return 1;'));
-        $this->assertIsArray($r);
-        $this->assertArrayHasKey('$code', $r);
+        $this->assertInstanceOf(OfficialJavascript::class, $r);
+        $this->assertSame('return 1;', $r->getCode());
     }
 
     public function testTimestampEncodes(): void
     {
         $r = Collection::prepareBSON(new Timestamp(1, 100));
-        $this->assertIsArray($r);
-        $this->assertArrayHasKey('$timestamp', $r);
+        $this->assertInstanceOf(OfficialTimestamp::class, $r);
+        $this->assertSame(100, $r->getTimestamp());
+        $this->assertSame(1, $r->getIncrement());
     }
 
     public function testMinMaxKeyEncode(): void
     {
-        $this->assertSame(['$minKey' => 1], Collection::prepareBSON(new MinKey()));
-        $this->assertSame(['$maxKey' => 1], Collection::prepareBSON(new MaxKey()));
+        $this->assertInstanceOf(OfficialMinKey::class, Collection::prepareBSON(new MinKey()));
+        $this->assertInstanceOf(OfficialMaxKey::class, Collection::prepareBSON(new MaxKey()));
     }
 }

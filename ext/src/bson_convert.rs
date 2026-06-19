@@ -7,11 +7,6 @@ use ext_php_rs::zend::ClassEntry;
 use ext_php_rs::convert::IntoZval;
 use std::cell::Cell;
 
-fn base64_decode(input: &str) -> Vec<u8> {
-    use base64::Engine;
-    base64::engine::general_purpose::STANDARD.decode(input).unwrap_or_default()
-}
-
 fn base64_encode(input: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(input)
@@ -26,6 +21,12 @@ thread_local! {
     static CE_REGEX: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     static CE_BSONARRAY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     static CE_BSONDOCUMENT: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_BINARY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_DECIMAL128: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_TIMESTAMP: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_MINKEY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_MAXKEY: Cell<Option<&'static ClassEntry>> = Cell::new(None);
+    static CE_JAVASCRIPT: Cell<Option<&'static ClassEntry>> = Cell::new(None);
     // Tracks whether we've attempted lookup (so we don't retry on failure)
     static CE_DOCUMENT_TRIED: Cell<bool> = Cell::new(false);
     static CE_OBJECTID_TRIED: Cell<bool> = Cell::new(false);
@@ -33,6 +34,12 @@ thread_local! {
     static CE_REGEX_TRIED: Cell<bool> = Cell::new(false);
     static CE_BSONARRAY_TRIED: Cell<bool> = Cell::new(false);
     static CE_BSONDOCUMENT_TRIED: Cell<bool> = Cell::new(false);
+    static CE_BINARY_TRIED: Cell<bool> = Cell::new(false);
+    static CE_DECIMAL128_TRIED: Cell<bool> = Cell::new(false);
+    static CE_TIMESTAMP_TRIED: Cell<bool> = Cell::new(false);
+    static CE_MINKEY_TRIED: Cell<bool> = Cell::new(false);
+    static CE_MAXKEY_TRIED: Cell<bool> = Cell::new(false);
+    static CE_JAVASCRIPT_TRIED: Cell<bool> = Cell::new(false);
 }
 
 fn get_ce_cached(
@@ -82,6 +89,30 @@ fn get_ce_bsondocument() -> Option<&'static ClassEntry> {
     get_ce_cached(&CE_BSONDOCUMENT, &CE_BSONDOCUMENT_TRIED, "MongoDB\\Model\\BSONDocument")
 }
 
+fn get_ce_binary() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_BINARY, &CE_BINARY_TRIED, "MongoDB\\BSON\\Binary")
+}
+
+fn get_ce_decimal128() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_DECIMAL128, &CE_DECIMAL128_TRIED, "MongoDB\\BSON\\Decimal128")
+}
+
+fn get_ce_timestamp() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_TIMESTAMP, &CE_TIMESTAMP_TRIED, "MongoDB\\BSON\\Timestamp")
+}
+
+fn get_ce_minkey() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_MINKEY, &CE_MINKEY_TRIED, "MongoDB\\BSON\\MinKey")
+}
+
+fn get_ce_maxkey() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_MAXKEY, &CE_MAXKEY_TRIED, "MongoDB\\BSON\\MaxKey")
+}
+
+fn get_ce_javascript() -> Option<&'static ClassEntry> {
+    get_ce_cached(&CE_JAVASCRIPT, &CE_JAVASCRIPT_TRIED, "MongoDB\\BSON\\Javascript")
+}
+
 /// An empty BSON document must stay distinguishable from an empty array once it
 /// reaches PHP — both would otherwise collapse to `[]`, and the PHP wrapper maps
 /// `[]` (array_is_list) to BSONArray, losing the `{}` shape (#53). Returning a
@@ -115,6 +146,62 @@ fn make_regex(pattern: &str, options: &str) -> Option<Zval> {
         &pattern as &dyn ext_php_rs::convert::IntoZvalDyn,
         &options as &dyn ext_php_rs::convert::IntoZvalDyn,
     ]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+// Read-side constructors for the remaining BSON value types. Producing real
+// MongoDB\BSON\* objects (instead of {$binary:…}/{$numberDecimal:…} arrays) is
+// the other half of the #45 fix: a genuine BSON value comes back as an object,
+// so a literal user document keyed `$binary` — which is read back as a plain
+// array — is no longer reconstructed into a BSON value by the PHP wrapDoc().
+fn make_binary(bytes: &[u8], subtype: u8) -> Option<Zval> {
+    let ce = get_ce_binary()?;
+    let obj = ce.new();
+    let mut data_z = Zval::new();
+    data_z.set_zend_string(ext_php_rs::types::ZendStr::new(bytes, false));
+    let st = subtype as i64;
+    obj.try_call_method("__construct", vec![
+        &data_z as &dyn ext_php_rs::convert::IntoZvalDyn,
+        &st as &dyn ext_php_rs::convert::IntoZvalDyn,
+    ]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_decimal128(value: &str) -> Option<Zval> {
+    let ce = get_ce_decimal128()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![&value as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_timestamp(increment: i64, timestamp: i64) -> Option<Zval> {
+    let ce = get_ce_timestamp()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![
+        &increment as &dyn ext_php_rs::convert::IntoZvalDyn,
+        &timestamp as &dyn ext_php_rs::convert::IntoZvalDyn,
+    ]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_javascript(code: &str) -> Option<Zval> {
+    let ce = get_ce_javascript()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", vec![&code as &dyn ext_php_rs::convert::IntoZvalDyn]).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_minkey() -> Option<Zval> {
+    let ce = get_ce_minkey()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", Vec::<&dyn ext_php_rs::convert::IntoZvalDyn>::new()).ok()?;
+    obj.into_zval(false).ok()
+}
+
+fn make_maxkey() -> Option<Zval> {
+    let ce = get_ce_maxkey()?;
+    let obj = ce.new();
+    obj.try_call_method("__construct", Vec::<&dyn ext_php_rs::convert::IntoZvalDyn>::new()).ok()?;
     obj.into_zval(false).ok()
 }
 
@@ -158,90 +245,6 @@ fn hash_table_to_doc(ht: &ZendHashTable) -> Result<Document, String> {
         doc.insert(key_str, bson_val);
     }
     Ok(doc)
-}
-
-fn try_extended_json(ht: &ZendHashTable) -> Result<Option<Bson>, String> {
-    if let Some(oid_val) = ht.get("$oid") {
-        if let Some(hex) = oid_val.str() {
-            let oid = bson::oid::ObjectId::parse_str(hex).map_err(|e| e.to_string())?;
-            return Ok(Some(Bson::ObjectId(oid)));
-        }
-    }
-
-    if let Some(date_val) = ht.get("$date") {
-        if let Some(inner) = date_val.array() {
-            if let Some(num_long) = inner.get("$numberLong") {
-                if let Some(ms_str) = num_long.str() {
-                    let ms: i64 = ms_str.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
-                    return Ok(Some(Bson::DateTime(bson::DateTime::from_millis(ms))));
-                }
-            }
-        }
-        if let Some(ms) = date_val.long() {
-            return Ok(Some(Bson::DateTime(bson::DateTime::from_millis(ms))));
-        }
-    }
-
-    if let Some(regex_val) = ht.get("$regularExpression") {
-        if let Some(inner) = regex_val.array() {
-            let pattern = inner.get("pattern").and_then(|v| v.str()).unwrap_or("");
-            let options = inner.get("options").and_then(|v| v.str()).unwrap_or("");
-            return Ok(Some(Bson::RegularExpression(bson::Regex { pattern: pattern.to_string(), options: options.to_string() })));
-        }
-    }
-
-    if let Some(bin_val) = ht.get("$binary") {
-        if let Some(inner) = bin_val.array() {
-            let b64 = inner.get("base64").and_then(|v| v.str()).unwrap_or("");
-            let sub_type_str = inner.get("subType").and_then(|v| v.str()).unwrap_or("00");
-            let sub_type_u8 = u8::from_str_radix(sub_type_str, 16).unwrap_or(0);
-            let bytes = base64_decode(b64);
-            return Ok(Some(Bson::Binary(bson::Binary {
-                subtype: bson::spec::BinarySubtype::from(sub_type_u8),
-                bytes,
-            })));
-        }
-    }
-
-    if let Some(dec_val) = ht.get("$numberDecimal") {
-        if let Some(s) = dec_val.str() {
-            let d128 = s.parse::<bson::Decimal128>().unwrap_or_else(|_| "0".parse::<bson::Decimal128>().unwrap());
-            return Ok(Some(Bson::Decimal128(d128)));
-        }
-    }
-
-    if let Some(ts_val) = ht.get("$timestamp") {
-        if let Some(inner) = ts_val.array() {
-            let t = inner.get("t").and_then(|v| v.long()).unwrap_or(0) as u32;
-            let i = inner.get("i").and_then(|v| v.long()).unwrap_or(0) as u32;
-            return Ok(Some(Bson::Timestamp(bson::Timestamp { time: t, increment: i })));
-        }
-    }
-
-    if ht.get("$minKey").is_some() {
-        return Ok(Some(Bson::MinKey));
-    }
-
-    if ht.get("$maxKey").is_some() {
-        return Ok(Some(Bson::MaxKey));
-    }
-
-    if let Some(code_val) = ht.get("$code") {
-        if let Some(code_str) = code_val.str() {
-            if let Some(scope_val) = ht.get("$scope") {
-                if let Some(scope_arr) = scope_val.array() {
-                    let scope_doc = hash_table_to_doc(scope_arr)?;
-                    return Ok(Some(Bson::JavaScriptCodeWithScope(bson::JavaScriptCodeWithScope {
-                        code: code_str.to_string(),
-                        scope: scope_doc,
-                    })));
-                }
-            }
-            return Ok(Some(Bson::JavaScriptCode(code_str.to_string())));
-        }
-    }
-
-    Ok(None)
 }
 
 fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
@@ -297,6 +300,62 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
                 return Ok(Bson::RegularExpression(bson::Regex { pattern, options: flags }));
             }
         }
+        // The remaining BSON value types are encoded straight from their PHP
+        // objects (#45). Doing this — rather than letting the PHP layer flatten
+        // them to {$binary:…}/{$numberDecimal:…} arrays the ext reconstructs —
+        // is what makes a *literal* user document keyed `$binary`/`$numberDecimal`
+        // unambiguous: only a real MongoDB\BSON\* object becomes a BSON type; a
+        // plain array stays a sub-document.
+        if let Some(ce) = get_ce_binary() {
+            if obj.instance_of(ce) {
+                let bytes = obj
+                    .try_call_method("getData", vec![])
+                    .ok()
+                    .and_then(|z| z.zend_str().map(|zs| zs.as_bytes().to_vec()))
+                    .unwrap_or_default();
+                let subtype = obj.try_call_method("getType", vec![]).ok().and_then(|z| z.long()).unwrap_or(0) as u8;
+                return Ok(Bson::Binary(bson::Binary { subtype: bson::spec::BinarySubtype::from(subtype), bytes }));
+            }
+        }
+        if let Some(ce) = get_ce_decimal128() {
+            if obj.instance_of(ce) {
+                if let Ok(result) = obj.try_call_method("__toString", vec![]) {
+                    if let Some(s) = result.str() {
+                        let d = s.parse::<bson::Decimal128>().unwrap_or_else(|_| "0".parse::<bson::Decimal128>().unwrap());
+                        return Ok(Bson::Decimal128(d));
+                    }
+                }
+            }
+        }
+        if let Some(ce) = get_ce_timestamp() {
+            if obj.instance_of(ce) {
+                let t = obj.try_call_method("getTimestamp", vec![]).ok().and_then(|z| z.long()).unwrap_or(0) as u32;
+                let i = obj.try_call_method("getIncrement", vec![]).ok().and_then(|z| z.long()).unwrap_or(0) as u32;
+                return Ok(Bson::Timestamp(bson::Timestamp { time: t, increment: i }));
+            }
+        }
+        if let Some(ce) = get_ce_javascript() {
+            if obj.instance_of(ce) {
+                let code = obj.try_call_method("getCode", vec![]).ok().and_then(|v| v.str().map(|s| s.to_string())).unwrap_or_default();
+                if let Some(scope_z) = obj.try_call_method("getScope", vec![]).ok() {
+                    if let Some(scope_arr) = scope_z.array() {
+                        let scope = hash_table_to_doc(scope_arr)?;
+                        return Ok(Bson::JavaScriptCodeWithScope(bson::JavaScriptCodeWithScope { code, scope }));
+                    }
+                }
+                return Ok(Bson::JavaScriptCode(code));
+            }
+        }
+        if let Some(ce) = get_ce_minkey() {
+            if obj.instance_of(ce) {
+                return Ok(Bson::MinKey);
+            }
+        }
+        if let Some(ce) = get_ce_maxkey() {
+            if obj.instance_of(ce) {
+                return Ok(Bson::MaxKey);
+            }
+        }
         // Generic PHP object (e.g. stdClass) → BSON Document
         if let Ok(props) = obj.get_properties() {
             return Ok(Bson::Document(hash_table_to_doc(props)?));
@@ -304,10 +363,10 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
         return Ok(Bson::Document(Document::new()));
     }
     if let Some(arr) = zval.array() {
-        if let Some(bson_type) = try_extended_json(arr)? {
-            return Ok(bson_type);
-        }
-
+        // NB: a plain PHP array is NEVER reinterpreted as a BSON type from its
+        // shape — that was the extended-JSON sentinel conflation (#45). BSON
+        // values arrive as real MongoDB\BSON\* objects (handled above); a plain
+        // array — even one keyed `$oid`/`$binary` — is stored verbatim.
         let is_sequential = arr.iter().enumerate().all(|(i, (key, _))| {
             matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
         });
@@ -372,6 +431,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             return wrap_as_bson_array(ht);
         }
         Bson::Binary(bin) => {
+            if let Some(z) = make_binary(&bin.bytes, u8::from(bin.subtype)) { return z; }
             let mut outer = ZendHashTable::new();
             let mut inner = ZendHashTable::new();
             let b64 = base64_encode(&bin.bytes);
@@ -403,6 +463,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(outer);
         }
         Bson::Timestamp(ts) => {
+            if let Some(z) = make_timestamp(ts.increment as i64, ts.time as i64) { return z; }
             let mut outer = ZendHashTable::new();
             let mut inner = ZendHashTable::new();
             let mut t_zval = Zval::new();
@@ -417,6 +478,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(outer);
         }
         Bson::Decimal128(d) => {
+            if let Some(z) = make_decimal128(&d.to_string()) { return z; }
             let mut ht = ZendHashTable::new();
             let mut d_zval = Zval::new();
             let _ = d_zval.set_string(&d.to_string(), false);
@@ -424,6 +486,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::JavaScriptCode(code) => {
+            if let Some(z) = make_javascript(code) { return z; }
             let mut ht = ZendHashTable::new();
             let mut code_zval = Zval::new();
             let _ = code_zval.set_string(code, false);
@@ -440,6 +503,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::MinKey => {
+            if let Some(z) = make_minkey() { return z; }
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);
@@ -447,6 +511,7 @@ pub fn bson_to_zval(bson: &Bson) -> Zval {
             zval.set_hashtable(ht);
         }
         Bson::MaxKey => {
+            if let Some(z) = make_maxkey() { return z; }
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);
@@ -542,6 +607,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::Binary => {
             if let RawBsonRef::Binary(bin) = val {
+                if let Some(z) = make_binary(bin.bytes, u8::from(bin.subtype)) { return z; }
                 let mut outer = ZendHashTable::new();
                 let mut inner = ZendHashTable::new();
                 let b64 = base64_encode(bin.bytes);
@@ -577,6 +643,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::Timestamp => {
             if let RawBsonRef::Timestamp(ts) = val {
+                if let Some(z) = make_timestamp(ts.increment as i64, ts.time as i64) { return z; }
                 let mut outer = ZendHashTable::new();
                 let mut inner = ZendHashTable::new();
                 let mut t_zval = Zval::new();
@@ -593,6 +660,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::Decimal128 => {
             if let RawBsonRef::Decimal128(d) = val {
+                if let Some(z) = make_decimal128(&d.to_string()) { return z; }
                 let mut ht = ZendHashTable::new();
                 let mut d_zval = Zval::new();
                 let _ = d_zval.set_string(&d.to_string(), false);
@@ -602,6 +670,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
         }
         ElementType::JavaScriptCode => {
             if let RawBsonRef::JavaScriptCode(code) = val {
+                if let Some(z) = make_javascript(code) { return z; }
                 let mut ht = ZendHashTable::new();
                 let mut code_zval = Zval::new();
                 let _ = code_zval.set_string(code, false);
@@ -621,6 +690,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
             }
         }
         ElementType::MinKey => {
+            if let Some(z) = make_minkey() { return z; }
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);
@@ -628,6 +698,7 @@ fn raw_bson_to_zval(val: RawBsonRef<'_>) -> Zval {
             zval.set_hashtable(ht);
         }
         ElementType::MaxKey => {
+            if let Some(z) = make_maxkey() { return z; }
             let mut ht = ZendHashTable::new();
             let mut one = Zval::new();
             one.set_long(1);

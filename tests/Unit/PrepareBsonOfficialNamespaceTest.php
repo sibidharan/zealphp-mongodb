@@ -13,33 +13,39 @@ use MongoDB\BSON\Timestamp;
 use PHPUnit\Framework\TestCase;
 use ZealPHP\MongoDB\Collection;
 
-use function base64_encode;
-
 /**
  * Drop-in contract pin (found by the parity rig): user code written for the
- * official library passes MongoDB\BSON\* value objects — prepareBSON() must
- * serialize them to extended JSON, not crash in the generic object branch on
- * their private props ("\0" keys).
+ * official library passes MongoDB\BSON\* value objects — since #45 prepareBSON()
+ * passes them through UNCHANGED (the ext encodes each by class), instead of
+ * flattening them to extended-JSON arrays. They must not crash in the generic
+ * object branch on their private props ("\0" keys).
  */
 final class PrepareBsonOfficialNamespaceTest extends TestCase
 {
-    public function testOfficialNamespaceValueObjectsSerialize(): void
+    public function testOfficialNamespaceValueObjectsPassThrough(): void
     {
+        $bin = new Binary("\x01\xff", Binary::TYPE_GENERIC);
+        $dec = new Decimal128('12.34');
+        $ts = new Timestamp(1, 2);
+        $js = new Javascript('function () {}');
+        $min = new MinKey();
+        $max = new MaxKey();
+
         $doc = Collection::prepareBSON([
-            'bin' => new Binary("\x01\xff", Binary::TYPE_GENERIC),
-            'dec' => new Decimal128('12.34'),
-            'ts' => new Timestamp(1, 2),
-            'js' => new Javascript('function () {}'),
-            'min' => new MinKey(),
-            'max' => new MaxKey(),
+            'bin' => $bin,
+            'dec' => $dec,
+            'ts' => $ts,
+            'js' => $js,
+            'min' => $min,
+            'max' => $max,
         ]);
 
-        $this->assertSame(base64_encode("\x01\xff"), $doc['bin']['$binary']['base64'] ?? null);
-        $this->assertSame('12.34', $doc['dec']['$numberDecimal'] ?? null);
-        $this->assertArrayHasKey('$timestamp', $doc['ts']);
-        $this->assertArrayHasKey('$code', $doc['js']);
-        $this->assertSame(1, $doc['min']['$minKey'] ?? null);
-        $this->assertSame(1, $doc['max']['$maxKey'] ?? null);
+        $this->assertSame($bin, $doc['bin']);
+        $this->assertSame($dec, $doc['dec']);
+        $this->assertSame($ts, $doc['ts']);
+        $this->assertSame($js, $doc['js']);
+        $this->assertSame($min, $doc['min']);
+        $this->assertSame($max, $doc['max']);
     }
 
     public function testPlainObjectWithPrivatePropsDoesNotCrash(): void

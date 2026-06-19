@@ -96,6 +96,7 @@ final class ParityApi
             'server_selection_timeout' => $this->serverSelectionTimeout(),
             'create_indexes_opts' => $this->createIndexesOpts($db),
             'map_reduce_parity' => $this->mapReduceParity($db),
+            'bson_sentinel_conflation' => $this->bsonSentinelConflation($db),
             'index_conflict' => $this->indexConflict($db),
             'gridfs_meta_omit' => $this->gridfsMetaOmit($db),
             'txn_invalid_read_concern' => $this->txnInvalidReadConcern($db),
@@ -189,6 +190,35 @@ final class ParityApi
                 ['$sort' => ['n' => 1, 'tags' => 1]],
             ]), false),
         ];
+    }
+
+    /**
+     * Extended-JSON sentinel conflation (#45): a LITERAL user sub-document whose
+     * single key looks like an extended-JSON marker ($oid / $binary /
+     * $numberDecimal / $date) must be stored verbatim as a sub-document, NOT
+     * silently reinterpreted as the corresponding BSON type. The legitimate
+     * path — passing a real MongoDB\BSON\* object — must still round-trip as
+     * that type.
+     */
+    private function bsonSentinelConflation(object $db): array
+    {
+        $col = $db->selectCollection('sentinel');
+        $col->drop();
+
+        $col->insertOne([
+            '_id' => 'conflict',
+            'oidish' => ['$oid' => 'aaaaaaaaaaaaaaaaaaaaaaaa'],
+            'binish' => ['$binary' => ['base64' => 'AQID', 'subType' => '00']],
+            'decish' => ['$numberDecimal' => '1234.5'],
+            'dateish' => ['$date' => ['$numberLong' => '1718000000000']],
+            'nested' => ['deep' => ['$oid' => 'bbbbbbbbbbbbbbbbbbbbbbbb']],
+        ]);
+        $conflict = $col->findOne(['_id' => 'conflict']);
+
+        $col->insertOne(['_id' => 'legit', 'oid' => new ObjectId('cccccccccccccccccccccccc')]);
+        $legit = $col->findOne(['_id' => 'legit']);
+
+        return ['conflict' => $conflict, 'legit' => $legit];
     }
 
     private function types(object $col): array

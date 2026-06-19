@@ -15,11 +15,11 @@ value-comparison rig* rather than papered over.
 
 ## Headline
 
-- **62 of 67** issues closed by PRs **#72–#114**, each with a rig op that
-  reproduces the bug and now passes. The rig runs **47 op groups, all
+- **63 of 67** issues closed by PRs **#72–#115**, each with a rig op that
+  reproduces the bug and now passes. The rig runs **48 op groups, all
   byte-identical** across the C (`ext-mongodb` + `mongodb/mongodb`) and Rust
   (`zealphp_mongodb`) stacks.
-- **5 remain open**, grouped below by *why* the value-comparison rig can't close
+- **4 remain open**, grouped below by *why* the value-comparison rig can't close
   them. None is a silent gap — each has a documented reason and a sketch of what
   closing it would take.
 - The original production defect — the `Cursor::toArray()` native-handle leak
@@ -37,7 +37,7 @@ test):
 |---|---|---|
 | Cursor / memory | leak, #14 | `CursorLeakTest`, cursor re-iteration guard |
 | CRUD write results | #8, #9, #10, #11, #12 | `write_results`, `insert_ids`, `bulk_ids`, `wc_ack` |
-| BSON fidelity | #6, #44, #53, #69, #70 | `bson_containers`, `int_types`, `empty_shapes`, `types` |
+| BSON fidelity | #6, #44, #45, #53, #69, #70 | `bson_containers`, `int_types`, `empty_shapes`, `types`, `bson_sentinel_conflation` |
 | Options forwarding | #7, #15, #16, #17, #40, #46, #47, #49 | `aggregate_opts`, `find_opts`, `index_spec`, `type_map`, `pipeline_update` |
 | Typed exceptions | #19, #22, #27, #38, #41, #42, #43, #48, #50, #51, #52, #55 | `errors`, `index_conflict`, `map_reduce_parity`, client-side validation |
 | Indexes | #18, #56, #57, #58, #59 | `index_flags`, `drop_index_info`, `create_indexes_opts` |
@@ -49,7 +49,7 @@ test):
 
 ---
 
-## Remaining open (5) — and exactly why
+## Remaining open (4) — and exactly why
 
 These are grouped by the *category of obstacle*, because the obstacle is the
 actionable part: it tells the next maintainer what infrastructure or design
@@ -98,7 +98,7 @@ byte-identical result is not expressible without re-architecting that model.
 > 47/47 ops identical). A reminder that "non-deterministic" deserves a probe
 > before it's accepted as a reason.
 
-### C. Not producible / not observable from the PHP value surface (2)
+### C. Not producible / not observable from the PHP value surface (1)
 
 The dual-rig drives *both* drivers from PHP. If a value can't be produced from
 PHP, or two correct behaviours yield the same observable value, the rig has no
@@ -118,12 +118,18 @@ divergence to catch.
   is exactly the disproportionate, hard-to-verify work the methodology says to
   *not* ship as a "fix." Documented, not faked.
 
-- **#45 — Extended-JSON sentinel conflation.** A literal user sub-document whose
-  single key is `$oid`/`$date`/`$numberDecimal`/… is indistinguishable from an
-  Extended-JSON sentinel under zeal's string-channel encoding. This is a *design*
-  limitation of that channel (the C driver uses a typed BSON channel with no such
-  ambiguity); fixing it means replacing the encoding channel, not a value tweak.
-  Extremely rare in real documents.
+> **#45 — Extended-JSON sentinel conflation — CLOSED (PR #115).** Listed here in
+> the previous revision as a *design* limitation needing the encoding channel
+> replaced — which is exactly what was done. The encoding channel is now the
+> typed-OBJECT channel the official driver uses: `prepareBSON` passes real
+> `MongoDB\BSON\*` objects to the ext (and normalizes the ZealPHP-namespace ones
+> to their official equivalent), the ext encodes each by class and **never**
+> reinterprets a plain array by shape, and the ext read path returns real BSON
+> objects so `wrapDoc` no longer reconstructs `{$oid:…}`/`{$binary:…}` arrays. A
+> literal user document keyed `$oid`/`$binary`/`$numberDecimal`/`$date` is now
+> stored and read back verbatim. The `bson_sentinel_conflation` rig op proves it
+> (literal sentinel-shaped sub-documents stay documents; a real ObjectId still
+> round-trips) — 48/48 ops identical, with `types`/`int_types` unregressed.
 
 > **#67 — per-operation readPreference routing — CLOSED (PR #113).** Listed here
 > in the previous revision as a "focused follow-up"; that follow-up has now been
@@ -147,7 +153,7 @@ rig-expressible") and were then closed by forwarding the concerns through the
 ext and reconciling the commit-time write-concern exception class — exactly the
 "here's what it would take" sketch, carried out (and #67 right after, the same
 way; and #23 right after, once its "race" turned out to be a probe-able
-determinism). When you close one of the five,
+determinism). When you close one of the four,
 follow `METHODOLOGY.md`: add the op that
 reproduces it, get `VERDICT: FULL PARITY ✓`, and move its row from "remaining" to
 "fixed" here. When you decide one is genuinely out of scope, keep it in its

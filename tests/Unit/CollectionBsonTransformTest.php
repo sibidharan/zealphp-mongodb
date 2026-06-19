@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB\Tests\Unit;
 
+use MongoDB\BSON\Binary as OfficialBinary;
+use MongoDB\BSON\Decimal128 as OfficialDecimal128;
+use MongoDB\BSON\Javascript as OfficialJavascript;
+use MongoDB\BSON\MaxKey as OfficialMaxKey;
+use MongoDB\BSON\MinKey as OfficialMinKey;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\Regex;
+use MongoDB\BSON\Timestamp as OfficialTimestamp;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
@@ -20,13 +26,21 @@ use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\Timestamp;
 use ZealPHP\MongoDB\Collection;
 
-use function base64_encode;
-
 /**
  * Tests for Collection::wrapDoc() and Collection::prepareBSON().
  *
- * These two static methods handle conversion between raw extended-JSON arrays
- * (as returned by the Rust FFI layer) and rich BSON type objects.
+ * Since #45 these two methods use the OBJECT channel: a genuine BSON value is
+ * carried PHP↔ext as a real MongoDB\BSON\* object, never as a {$oid:…} /
+ * {$binary:…} extended-JSON array. That is what makes a *literal* user document
+ * whose key happens to be `$oid`/`$binary`/… unambiguous from an actual BSON
+ * value — the conflation these tests now guard against.
+ *
+ * - prepareBSON (write): BSON objects pass through (ZealPHP-namespace ones are
+ *   normalized to their official MongoDB\BSON\* equivalent); a plain array is
+ *   recursed and never reinterpreted by shape.
+ * - wrapDoc (read): the ext already returns BSON objects, so wrapDoc passes
+ *   objects through and NEVER reconstructs an extended-JSON array into a BSON
+ *   type — a `['$oid' => …]` array is preserved as a BSONDocument.
  */
 class CollectionBsonTransformTest extends TestCase
 {
@@ -57,157 +71,59 @@ class CollectionBsonTransformTest extends TestCase
         $this->assertTrue(Collection::wrapDoc(true));
     }
 
-    // ─── wrapDoc: ObjectId ────────────────────────────────────────────
+    // ─── wrapDoc: BSON objects (as the ext returns them) pass through ──
 
-    public function testWrapDocObjectId(): void
+    public function testWrapDocObjectIdObjectPassesThrough(): void
     {
-        $hex = '507f1f77bcf86cd799439011';
-        $result = Collection::wrapDoc(['$oid' => $hex]);
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
 
-        $this->assertInstanceOf(ObjectId::class, $result);
-        $this->assertSame($hex, (string) $result);
+        $this->assertSame($oid, Collection::wrapDoc($oid));
     }
 
-    // ─── wrapDoc: UTCDateTime ─────────────────────────────────────────
-
-    public function testWrapDocUtcDateTimeWithNumberLong(): void
+    public function testWrapDocBinaryObjectPassesThrough(): void
     {
-        $ms = '1716000000000';
-        $result = Collection::wrapDoc(['$date' => ['$numberLong' => $ms]]);
+        $bin = new OfficialBinary('payload', OfficialBinary::TYPE_GENERIC);
 
-        $this->assertInstanceOf(UTCDateTime::class, $result);
-        $this->assertSame($ms, (string) $result);
+        $this->assertSame($bin, Collection::wrapDoc($bin));
     }
 
-    public function testWrapDocUtcDateTimeWithPlainInt(): void
-    {
-        $ms = 1716000000000;
-        $result = Collection::wrapDoc(['$date' => $ms]);
+    // ─── wrapDoc: #45 — extended-JSON arrays are NOT reconstructed ─────
 
-        $this->assertInstanceOf(UTCDateTime::class, $result);
-        $this->assertSame((string) $ms, (string) $result);
+    public function testWrapDocOidArrayStaysDocument(): void
+    {
+        $result = Collection::wrapDoc(['$oid' => '507f1f77bcf86cd799439011']);
+
+        $this->assertInstanceOf(BSONDocument::class, $result);
+        $this->assertSame('507f1f77bcf86cd799439011', $result['$oid']);
     }
 
-    // ─── wrapDoc: Decimal128 ──────────────────────────────────────────
+    public function testWrapDocBinaryArrayStaysDocument(): void
+    {
+        $result = Collection::wrapDoc([
+            '$binary' => ['base64' => 'AQID', 'subType' => '00'],
+        ]);
 
-    public function testWrapDocDecimal128(): void
+        $this->assertInstanceOf(BSONDocument::class, $result);
+        $this->assertInstanceOf(BSONDocument::class, $result['$binary']);
+    }
+
+    public function testWrapDocNumberDecimalArrayStaysDocument(): void
     {
         $result = Collection::wrapDoc(['$numberDecimal' => '123.456']);
 
-        $this->assertInstanceOf(Decimal128::class, $result);
-        $this->assertSame('123.456', (string) $result);
+        $this->assertInstanceOf(BSONDocument::class, $result);
+        $this->assertSame('123.456', $result['$numberDecimal']);
     }
 
-    // ─── wrapDoc: Binary ──────────────────────────────────────────────
-
-    public function testWrapDocBinary(): void
-    {
-        $rawData = 'binary payload';
-        $result = Collection::wrapDoc([
-            '$binary' => [
-                'base64'  => base64_encode($rawData),
-                'subType' => '00',
-            ],
-        ]);
-
-        $this->assertInstanceOf(Binary::class, $result);
-        $this->assertSame($rawData, $result->getData());
-        $this->assertSame(Binary::TYPE_GENERIC, $result->getType());
-    }
-
-    public function testWrapDocBinaryUuidSubtype(): void
-    {
-        $rawData = 'uuid-binary-data';
-        $result = Collection::wrapDoc([
-            '$binary' => [
-                'base64'  => base64_encode($rawData),
-                'subType' => '04',
-            ],
-        ]);
-
-        $this->assertInstanceOf(Binary::class, $result);
-        $this->assertSame(Binary::TYPE_UUID, $result->getType());
-    }
-
-    // ─── wrapDoc: Regex ───────────────────────────────────────────────
-
-    public function testWrapDocRegex(): void
+    public function testWrapDocNestedOidArrayStaysDocument(): void
     {
         $result = Collection::wrapDoc([
-            '$regularExpression' => [
-                'pattern' => '^test',
-                'options' => 'i',
-            ],
+            'wrapper' => ['$oid' => '507f1f77bcf86cd799439011'],
         ]);
 
-        $this->assertInstanceOf(Regex::class, $result);
-        $this->assertSame('^test', $result->getPattern());
-        $this->assertSame('i', $result->getFlags());
-    }
-
-    public function testWrapDocRegexEmptyOptions(): void
-    {
-        $result = Collection::wrapDoc([
-            '$regularExpression' => [
-                'pattern' => '.*',
-                'options' => '',
-            ],
-        ]);
-
-        $this->assertInstanceOf(Regex::class, $result);
-        $this->assertSame('', $result->getFlags());
-    }
-
-    // ─── wrapDoc: Timestamp ───────────────────────────────────────────
-
-    public function testWrapDocTimestamp(): void
-    {
-        $result = Collection::wrapDoc([
-            '$timestamp' => ['t' => 1234567890, 'i' => 1],
-        ]);
-
-        $this->assertInstanceOf(Timestamp::class, $result);
-        $this->assertSame(1234567890, $result->getTimestamp());
-        $this->assertSame(1, $result->getIncrement());
-    }
-
-    // ─── wrapDoc: Javascript ──────────────────────────────────────────
-
-    public function testWrapDocJavascriptWithoutScope(): void
-    {
-        $result = Collection::wrapDoc(['$code' => 'return true;']);
-
-        $this->assertInstanceOf(Javascript::class, $result);
-        $this->assertSame('return true;', $result->getCode());
-        $this->assertNull($result->getScope());
-    }
-
-    public function testWrapDocJavascriptWithScope(): void
-    {
-        $result = Collection::wrapDoc([
-            '$code'  => 'return x;',
-            '$scope' => ['x' => 42],
-        ]);
-
-        $this->assertInstanceOf(Javascript::class, $result);
-        $this->assertSame('return x;', $result->getCode());
-        $this->assertNotNull($result->getScope());
-    }
-
-    // ─── wrapDoc: MinKey / MaxKey ─────────────────────────────────────
-
-    public function testWrapDocMinKey(): void
-    {
-        $result = Collection::wrapDoc(['$minKey' => 1]);
-
-        $this->assertInstanceOf(MinKey::class, $result);
-    }
-
-    public function testWrapDocMaxKey(): void
-    {
-        $result = Collection::wrapDoc(['$maxKey' => 1]);
-
-        $this->assertInstanceOf(MaxKey::class, $result);
+        $this->assertInstanceOf(BSONDocument::class, $result);
+        $this->assertInstanceOf(BSONDocument::class, $result['wrapper']);
+        $this->assertSame('507f1f77bcf86cd799439011', $result['wrapper']['$oid']);
     }
 
     // ─── wrapDoc: sequential array → BSONArray ────────────────────────
@@ -228,16 +144,14 @@ class CollectionBsonTransformTest extends TestCase
         $this->assertCount(0, $result);
     }
 
-    public function testWrapDocNestedArrayInList(): void
+    public function testWrapDocListWithObjectIdObjectPreservesIt(): void
     {
-        $result = Collection::wrapDoc([
-            ['$oid' => '507f1f77bcf86cd799439011'],
-            'plain string',
-        ]);
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $result = Collection::wrapDoc([$oid, 'plain string']);
 
         $this->assertInstanceOf(BSONArray::class, $result);
         $copy = $result->getArrayCopy();
-        $this->assertInstanceOf(ObjectId::class, $copy[0]);
+        $this->assertSame($oid, $copy[0]);
         $this->assertSame('plain string', $copy[1]);
     }
 
@@ -254,31 +168,27 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testWrapDocDocumentRecursivelyWrapsValues(): void
     {
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
         $result = Collection::wrapDoc([
             'user' => ['name' => 'Bob'],
-            'id'   => ['$oid' => '507f1f77bcf86cd799439011'],
+            'id'   => $oid,
         ]);
 
         $this->assertInstanceOf(BSONDocument::class, $result);
         $this->assertInstanceOf(BSONDocument::class, $result['user']);
-        $this->assertInstanceOf(ObjectId::class, $result['id']);
+        $this->assertSame($oid, $result['id']);
     }
-
-    // ─── wrapDoc: nested / mixed structures ───────────────────────────
 
     public function testWrapDocDeeplyNestedDocument(): void
     {
+        $oid = new ObjectId('aabbccddeeff00112233aabb');
         $result = Collection::wrapDoc([
-            'level1' => [
-                'level2' => [
-                    'level3' => ['$oid' => 'aabbccddeeff00112233aabb'],
-                ],
-            ],
+            'level1' => ['level2' => ['level3' => $oid]],
         ]);
 
         $this->assertInstanceOf(BSONDocument::class, $result);
         $this->assertInstanceOf(BSONDocument::class, $result['level1']);
-        $this->assertInstanceOf(ObjectId::class, $result['level1']['level2']['level3']);
+        $this->assertSame($oid, $result['level1']['level2']['level3']);
     }
 
     public function testWrapDocDocumentContainingList(): void
@@ -306,19 +216,19 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testWrapDocMixedTypesInDocument(): void
     {
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $date = new UTCDateTime(1716000000000);
         $result = Collection::wrapDoc([
-            '_id'       => ['$oid' => '507f1f77bcf86cd799439011'],
-            'created'   => ['$date' => ['$numberLong' => '1716000000000']],
-            'score'     => ['$numberDecimal' => '99.99'],
-            'tags'      => ['a', 'b'],
-            'active'    => true,
-            'name'      => 'Test',
+            '_id'     => $oid,
+            'created' => $date,
+            'tags'    => ['a', 'b'],
+            'active'  => true,
+            'name'    => 'Test',
         ]);
 
         $this->assertInstanceOf(BSONDocument::class, $result);
-        $this->assertInstanceOf(ObjectId::class, $result['_id']);
-        $this->assertInstanceOf(UTCDateTime::class, $result['created']);
-        $this->assertInstanceOf(Decimal128::class, $result['score']);
+        $this->assertSame($oid, $result['_id']);
+        $this->assertSame($date, $result['created']);
         $this->assertInstanceOf(BSONArray::class, $result['tags']);
         $this->assertTrue($result['active']);
         $this->assertSame('Test', $result['name']);
@@ -344,115 +254,95 @@ class CollectionBsonTransformTest extends TestCase
         $this->assertNull($result['null']);
     }
 
-    // ─── prepareBSON: ObjectId ────────────────────────────────────────
+    // ─── prepareBSON: official BSON objects pass through unchanged ─────
 
     public function testPrepareBsonObjectId(): void
     {
         $oid = new ObjectId('507f1f77bcf86cd799439011');
-        $result = Collection::prepareBSON($oid);
 
-        $this->assertIsArray($result);
-        $this->assertSame('507f1f77bcf86cd799439011', $result['$oid']);
+        $this->assertSame($oid, Collection::prepareBSON($oid));
     }
-
-    // ─── prepareBSON: UTCDateTime ─────────────────────────────────────
 
     public function testPrepareBsonUtcDateTime(): void
     {
         $dt = new UTCDateTime(1716000000000);
-        $result = Collection::prepareBSON($dt);
 
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('$date', $result);
-        $this->assertSame('1716000000000', $result['$date']['$numberLong']);
+        $this->assertSame($dt, Collection::prepareBSON($dt));
     }
-
-    // ─── prepareBSON: Regex ───────────────────────────────────────────
 
     public function testPrepareBsonRegex(): void
     {
         $regex = new Regex('^hello', 'im');
-        $result = Collection::prepareBSON($regex);
 
-        $this->assertIsArray($result);
-        $this->assertSame('^hello', $result['$regularExpression']['pattern']);
-        $this->assertSame('im', $result['$regularExpression']['options']);
+        $this->assertSame($regex, Collection::prepareBSON($regex));
     }
 
-    // ─── prepareBSON: Binary ──────────────────────────────────────────
+    public function testPrepareBsonOfficialBinaryPassesThrough(): void
+    {
+        $bin = new OfficialBinary('payload', OfficialBinary::TYPE_GENERIC);
+
+        $this->assertSame($bin, Collection::prepareBSON($bin));
+    }
+
+    // ─── prepareBSON: ZealPHP BSON objects → official equivalents ──────
 
     public function testPrepareBsonBinary(): void
     {
         $bin = new Binary('payload', Binary::TYPE_GENERIC);
         $result = Collection::prepareBSON($bin);
 
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('$binary', $result);
-        $this->assertSame(base64_encode('payload'), $result['$binary']['base64']);
-        $this->assertSame('00', $result['$binary']['subType']);
+        $this->assertInstanceOf(OfficialBinary::class, $result);
+        $this->assertSame('payload', $result->getData());
+        $this->assertSame(OfficialBinary::TYPE_GENERIC, $result->getType());
     }
-
-    // ─── prepareBSON: Decimal128 ──────────────────────────────────────
 
     public function testPrepareBsonDecimal128(): void
     {
         $dec = new Decimal128('1234.5678');
         $result = Collection::prepareBSON($dec);
 
-        $this->assertIsArray($result);
-        $this->assertSame('1234.5678', $result['$numberDecimal']);
+        $this->assertInstanceOf(OfficialDecimal128::class, $result);
+        $this->assertSame('1234.5678', (string) $result);
     }
-
-    // ─── prepareBSON: Timestamp ───────────────────────────────────────
 
     public function testPrepareBsonTimestamp(): void
     {
         $ts = new Timestamp(5, 1234567890);
         $result = Collection::prepareBSON($ts);
 
-        $this->assertIsArray($result);
-        $this->assertSame(1234567890, $result['$timestamp']['t']);
-        $this->assertSame(5, $result['$timestamp']['i']);
+        $this->assertInstanceOf(OfficialTimestamp::class, $result);
+        $this->assertSame(1234567890, $result->getTimestamp());
+        $this->assertSame(5, $result->getIncrement());
     }
-
-    // ─── prepareBSON: Javascript ──────────────────────────────────────
 
     public function testPrepareBsonJavascript(): void
     {
         $js = new Javascript('return 1;');
         $result = Collection::prepareBSON($js);
 
-        $this->assertIsArray($result);
-        $this->assertSame('return 1;', $result['$code']);
-        $this->assertArrayNotHasKey('$scope', $result);
+        $this->assertInstanceOf(OfficialJavascript::class, $result);
+        $this->assertSame('return 1;', $result->getCode());
+        $this->assertNull($result->getScope());
     }
 
     public function testPrepareBsonJavascriptWithScope(): void
     {
-        $js = new Javascript('return x;', ['x' => 10]);
+        $js = new Javascript('return x;', (object) ['x' => 10]);
         $result = Collection::prepareBSON($js);
 
-        $this->assertIsArray($result);
-        $this->assertSame('return x;', $result['$code']);
-        $this->assertArrayHasKey('$scope', $result);
+        $this->assertInstanceOf(OfficialJavascript::class, $result);
+        $this->assertSame('return x;', $result->getCode());
+        $this->assertNotNull($result->getScope());
     }
-
-    // ─── prepareBSON: MinKey / MaxKey ─────────────────────────────────
 
     public function testPrepareBsonMinKey(): void
     {
-        $result = Collection::prepareBSON(new MinKey());
-
-        $this->assertIsArray($result);
-        $this->assertSame(1, $result['$minKey']);
+        $this->assertInstanceOf(OfficialMinKey::class, Collection::prepareBSON(new MinKey()));
     }
 
     public function testPrepareBsonMaxKey(): void
     {
-        $result = Collection::prepareBSON(new MaxKey());
-
-        $this->assertIsArray($result);
-        $this->assertSame(1, $result['$maxKey']);
+        $this->assertInstanceOf(OfficialMaxKey::class, Collection::prepareBSON(new MaxKey()));
     }
 
     // ─── prepareBSON: Int64 ───────────────────────────────────────────
@@ -466,7 +356,25 @@ class CollectionBsonTransformTest extends TestCase
         $this->assertSame(9876543210, $result);
     }
 
-    // ─── prepareBSON: BSONDocument ────────────────────────────────────
+    // ─── prepareBSON: #45 — literal sentinel-shaped arrays stay arrays ─
+
+    public function testPrepareBsonLiteralOidArrayStaysArray(): void
+    {
+        $result = Collection::prepareBSON(['$oid' => '507f1f77bcf86cd799439011']);
+
+        $this->assertIsArray($result);
+        $this->assertSame('507f1f77bcf86cd799439011', $result['$oid']);
+    }
+
+    public function testPrepareBsonLiteralBinaryArrayStaysArray(): void
+    {
+        $result = Collection::prepareBSON(['$binary' => ['base64' => 'AQID', 'subType' => '00']]);
+
+        $this->assertIsArray($result);
+        $this->assertSame('AQID', $result['$binary']['base64']);
+    }
+
+    // ─── prepareBSON: BSONDocument / BSONArray ────────────────────────
 
     public function testPrepareBsonDocument(): void
     {
@@ -480,16 +388,15 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testPrepareBsonDocumentRecursive(): void
     {
-        $inner = new BSONDocument(['id' => new ObjectId('507f1f77bcf86cd799439011')]);
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $inner = new BSONDocument(['id' => $oid]);
         $outer = new BSONDocument(['nested' => $inner]);
         $result = Collection::prepareBSON($outer);
 
         $this->assertIsArray($result);
         $this->assertIsArray($result['nested']);
-        $this->assertSame('507f1f77bcf86cd799439011', $result['nested']['id']['$oid']);
+        $this->assertSame($oid, $result['nested']['id']);
     }
-
-    // ─── prepareBSON: BSONArray ───────────────────────────────────────
 
     public function testPrepareBsonArray(): void
     {
@@ -502,31 +409,30 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testPrepareBsonArrayWithTypedElements(): void
     {
-        $arr = new BSONArray([
-            new ObjectId('507f1f77bcf86cd799439011'),
-            new MinKey(),
-        ]);
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $arr = new BSONArray([$oid, new MinKey()]);
         $result = Collection::prepareBSON($arr);
 
         $this->assertIsArray($result);
-        $this->assertSame('507f1f77bcf86cd799439011', $result[0]['$oid']);
-        $this->assertSame(1, $result[1]['$minKey']);
+        $this->assertSame($oid, $result[0]);
+        $this->assertInstanceOf(OfficialMinKey::class, $result[1]);
     }
 
     // ─── prepareBSON: plain array (recursive) ─────────────────────────
 
     public function testPrepareBsonPlainArrayRecursive(): void
     {
-        $data = [
-            'id'   => new ObjectId('507f1f77bcf86cd799439011'),
-            'time' => new UTCDateTime(1000),
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $dt = new UTCDateTime(1000);
+        $result = Collection::prepareBSON([
+            'id'   => $oid,
+            'time' => $dt,
             'val'  => 'plain',
-        ];
-        $result = Collection::prepareBSON($data);
+        ]);
 
         $this->assertIsArray($result);
-        $this->assertSame('507f1f77bcf86cd799439011', $result['id']['$oid']);
-        $this->assertSame('1000', $result['time']['$date']['$numberLong']);
+        $this->assertSame($oid, $result['id']);
+        $this->assertSame($dt, $result['time']);
         $this->assertSame('plain', $result['val']);
     }
 
@@ -534,16 +440,16 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testPrepareBsonStdClassRecursive(): void
     {
+        $oid = new ObjectId('aabbccddeeff00112233aabb');
         $obj = new stdClass();
-        $obj->id = new ObjectId('aabbccddeeff00112233aabb');
+        $obj->id = $oid;
         $obj->name = 'Test';
         $obj->score = 42;
 
         $result = Collection::prepareBSON($obj);
 
         $this->assertInstanceOf(stdClass::class, $result);
-        $this->assertIsArray($result->id);
-        $this->assertSame('aabbccddeeff00112233aabb', $result->id['$oid']);
+        $this->assertSame($oid, $result->id);
         $this->assertSame('Test', $result->name);
         $this->assertSame(42, $result->score);
     }
@@ -570,7 +476,7 @@ class CollectionBsonTransformTest extends TestCase
         $this->assertFalse(Collection::prepareBSON(false));
     }
 
-    // ─── Round-trip: wrapDoc(prepareBSON(X)) ──────────────────────────
+    // ─── Round-trip: wrapDoc(prepareBSON(X)) preserves the value ──────
 
     public function testRoundTripObjectId(): void
     {
@@ -595,20 +501,20 @@ class CollectionBsonTransformTest extends TestCase
         $dec = new Decimal128('99.99');
         $result = Collection::wrapDoc(Collection::prepareBSON($dec));
 
-        $this->assertInstanceOf(Decimal128::class, $result);
+        $this->assertInstanceOf(OfficialDecimal128::class, $result);
         $this->assertSame('99.99', (string) $result);
     }
 
     public function testRoundTripMinKey(): void
     {
         $result = Collection::wrapDoc(Collection::prepareBSON(new MinKey()));
-        $this->assertInstanceOf(MinKey::class, $result);
+        $this->assertInstanceOf(OfficialMinKey::class, $result);
     }
 
     public function testRoundTripMaxKey(): void
     {
         $result = Collection::wrapDoc(Collection::prepareBSON(new MaxKey()));
-        $this->assertInstanceOf(MaxKey::class, $result);
+        $this->assertInstanceOf(OfficialMaxKey::class, $result);
     }
 
     public function testRoundTripTimestamp(): void
@@ -616,7 +522,7 @@ class CollectionBsonTransformTest extends TestCase
         $ts = new Timestamp(3, 1000000);
         $result = Collection::wrapDoc(Collection::prepareBSON($ts));
 
-        $this->assertInstanceOf(Timestamp::class, $result);
+        $this->assertInstanceOf(OfficialTimestamp::class, $result);
         $this->assertSame(1000000, $result->getTimestamp());
         $this->assertSame(3, $result->getIncrement());
     }
@@ -626,7 +532,7 @@ class CollectionBsonTransformTest extends TestCase
         $bin = new Binary('round-trip-data', Binary::TYPE_GENERIC);
         $result = Collection::wrapDoc(Collection::prepareBSON($bin));
 
-        $this->assertInstanceOf(Binary::class, $result);
+        $this->assertInstanceOf(OfficialBinary::class, $result);
         $this->assertSame('round-trip-data', $result->getData());
     }
 
@@ -634,7 +540,6 @@ class CollectionBsonTransformTest extends TestCase
 
     public function testWrapDocEmptyAssociativeArrayBecomesEmptyBsonArray(): void
     {
-        // An empty array passes array_is_list() → BSONArray
         $result = Collection::wrapDoc([]);
         $this->assertInstanceOf(BSONArray::class, $result);
         $this->assertCount(0, $result);

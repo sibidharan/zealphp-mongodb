@@ -43,14 +43,14 @@ class ResultClassesTest extends TestCase
         $this->assertNull($result->getInsertedId());
     }
 
-    public function testInsertOneResultGetInsertedIdWrapsOidArray(): void
+    public function testInsertOneResultGetInsertedIdPreservesObjectId(): void
     {
-        $oid = '507f1f77bcf86cd799439011';
-        $result = new InsertOneResult(['inserted_id' => ['$oid' => $oid]]);
-        $id = $result->getInsertedId();
+        // Since #45 the ext returns the inserted id as a real ObjectId object,
+        // which getInsertedId() passes through wrapDoc unchanged.
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
+        $result = new InsertOneResult(['inserted_id' => $oid]);
 
-        $this->assertInstanceOf(ObjectId::class, $id);
-        $this->assertSame($oid, (string) $id);
+        $this->assertSame($oid, $result->getInsertedId());
     }
 
     public function testInsertOneResultGetInsertedIdWrapsGenericArray(): void
@@ -108,40 +108,28 @@ class ResultClassesTest extends TestCase
         $this->assertSame(['id1', 'id2', 'id3'], $result->getInsertedIds());
     }
 
-    public function testInsertManyResultGetInsertedIdsWithOidArrays(): void
+    public function testInsertManyResultGetInsertedIdsPreservesObjectIds(): void
     {
-        $oid1 = '507f1f77bcf86cd799439011';
-        $oid2 = '507f1f77bcf86cd799439022';
-        $result = new InsertManyResult([
-            'inserted_ids' => [
-                ['$oid' => $oid1],
-                ['$oid' => $oid2],
-            ],
-        ]);
+        $oid1 = new ObjectId('507f1f77bcf86cd799439011');
+        $oid2 = new ObjectId('507f1f77bcf86cd799439022');
+        $result = new InsertManyResult(['inserted_ids' => [$oid1, $oid2]]);
         $ids = $result->getInsertedIds();
 
         $this->assertCount(2, $ids);
-        $this->assertInstanceOf(ObjectId::class, $ids[0]);
-        $this->assertInstanceOf(ObjectId::class, $ids[1]);
-        $this->assertSame($oid1, (string) $ids[0]);
-        $this->assertSame($oid2, (string) $ids[1]);
+        $this->assertSame($oid1, $ids[0]);
+        $this->assertSame($oid2, $ids[1]);
     }
 
     public function testInsertManyResultGetInsertedIdsMixed(): void
     {
-        $oid = '507f1f77bcf86cd799439011';
+        $oid = new ObjectId('507f1f77bcf86cd799439011');
         $result = new InsertManyResult([
-            'inserted_ids' => [
-                ['$oid' => $oid],
-                'plain-string-id',
-                42,
-            ],
+            'inserted_ids' => [$oid, 'plain-string-id', 42],
         ]);
         $ids = $result->getInsertedIds();
 
         $this->assertCount(3, $ids);
-        $this->assertInstanceOf(ObjectId::class, $ids[0]);
-        $this->assertSame($oid, (string) $ids[0]);
+        $this->assertSame($oid, $ids[0]);
         $this->assertSame('plain-string-id', $ids[1]);
         $this->assertSame(42, $ids[2]);
     }
@@ -204,14 +192,12 @@ class ResultClassesTest extends TestCase
         $this->assertNull($result->getUpsertedId());
     }
 
-    public function testUpdateResultGetUpsertedIdWrapsOidArray(): void
+    public function testUpdateResultGetUpsertedIdPreservesObjectId(): void
     {
-        $oid = '507f1f77bcf86cd799439099';
-        $result = new UpdateResult(['upserted_id' => ['$oid' => $oid]]);
-        $id = $result->getUpsertedId();
+        $oid = new ObjectId('507f1f77bcf86cd799439099');
+        $result = new UpdateResult(['upserted_id' => $oid]);
 
-        $this->assertInstanceOf(ObjectId::class, $id);
-        $this->assertSame($oid, (string) $id);
+        $this->assertSame($oid, $result->getUpsertedId());
     }
 
     public function testUpdateResultGetUpsertedIdString(): void
