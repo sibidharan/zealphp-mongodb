@@ -97,6 +97,7 @@ final class ParityApi
             'create_indexes_opts' => $this->createIndexesOpts($db),
             'map_reduce_parity' => $this->mapReduceParity($db),
             'index_conflict' => $this->indexConflict($db),
+            'gridfs_meta_omit' => $this->gridfsMetaOmit($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -411,6 +412,33 @@ final class ParityApi
         return [
             'dup_key' => $this->captureError(static fn () => $col->insertOne(['_id' => 1, 'v' => 'dup'])),
             'bad_command' => $this->captureError(static fn () => $db->command(['thisIsNotARealCommand' => 1])),
+        ];
+    }
+
+    /**
+     * GridFS metadata-omission parity (#29): uploading with no metadata must
+     * OMIT the files-document `metadata` field, not store `metadata: null`.
+     * Probe whether the key is present at all (a null would be a divergence).
+     */
+    private function gridfsMetaOmit(object $db): array
+    {
+        $bucket = $db->selectGridFSBucket(['bucketName' => 'mfs']);
+        try {
+            $bucket->drop();
+        } catch (\Throwable) {
+            // first run — bucket collections don't exist yet
+        }
+
+        $s = \fopen('php://temp', 'r+b');
+        \fwrite($s, 'no-metadata-here');
+        \rewind($s);
+        $id = $bucket->uploadFromStream('plain.bin', $s);
+
+        $fileDoc = (array) $bucket->findOne(['_id' => $id]);
+
+        return [
+            'metadata_present' => \array_key_exists('metadata', $fileDoc),
+            'metadata_value' => $fileDoc['metadata'] ?? 'ABSENT',
         ];
     }
 
