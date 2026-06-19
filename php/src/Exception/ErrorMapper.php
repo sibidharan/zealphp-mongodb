@@ -35,7 +35,13 @@ final class ErrorMapper
     private const WE_DELIM  = "\u{1}WE\u{1}";
     private const FIELD     = "\u{1}";
 
-    public static function map(Throwable $e): Throwable
+    /**
+     * @param bool $writeConcernAsCommand When the error is encountered running a
+     *   command (e.g. commitTransaction) rather than a CRUD write, a write-concern
+     *   failure is surfaced by the official driver as a CommandException, not a
+     *   BulkWriteException (#60). Callers in a command context pass true.
+     */
+    public static function map(Throwable $e, bool $writeConcernAsCommand = false): Throwable
     {
         if ($e instanceof DriverException) {
             return $e;
@@ -70,12 +76,14 @@ final class ErrorMapper
                 $e,
                 new WriteResult(0, 0, 0, 0, 0, null, $writeErrors),
             ),
-            'writeconcern' => new BulkWriteException(
-                $errmsg,
-                $code,
-                $e,
-                new WriteResult(0, 0, 0, 0, 0, null, $writeErrors),
-            ),
+            'writeconcern' => $writeConcernAsCommand
+                ? new CommandException($errmsg, $code, $e)
+                : new BulkWriteException(
+                    $errmsg,
+                    $code,
+                    $e,
+                    new WriteResult(0, 0, 0, 0, 0, null, $writeErrors),
+                ),
             'command' => new CommandException($errmsg, $code, $e),
             default   => new DriverRuntimeException($errmsg !== '' ? $errmsg : $message, $code, $e),
         };

@@ -98,6 +98,8 @@ final class ParityApi
             'map_reduce_parity' => $this->mapReduceParity($db),
             'index_conflict' => $this->indexConflict($db),
             'gridfs_meta_omit' => $this->gridfsMetaOmit($db),
+            'txn_invalid_read_concern' => $this->txnInvalidReadConcern($db),
+            'txn_unsat_write_concern' => $this->txnUnsatWriteConcern($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -413,6 +415,65 @@ final class ParityApi
             'dup_key' => $this->captureError(static fn () => $col->insertOne(['_id' => 1, 'v' => 'dup'])),
             'bad_command' => $this->captureError(static fn () => $db->command(['thisIsNotARealCommand' => 1])),
         ];
+    }
+
+    /**
+     * Transaction readConcern forwarding (#61): an invalid readConcern level
+     * passed to startTransaction must reach the server and be REJECTED at the
+     * first operation — not silently accepted. Both drivers must surface the
+     * same server error.
+     */
+    private function txnInvalidReadConcern(object $db): array
+    {
+        $col = $db->selectCollection('txn_rc');
+        $col->drop();
+        $col->insertOne(['k' => 'seed']);
+
+        $session = $this->client->startSession();
+        $rc = $this->driver === 'c' ? new \MongoDB\Driver\ReadConcern('bogus') : ['level' => 'bogus'];
+        $session->startTransaction(['readConcern' => $rc]);
+
+        $err = $this->captureError(static fn () => $col->find(['k' => 'seed'], ['session' => $session])->toArray());
+
+        try {
+            $session->abortTransaction();
+        } catch (\Throwable) {
+            // the server error already terminated the transaction
+        }
+
+        $session->endSession();
+
+        return ['err' => $err];
+    }
+
+    /**
+     * Transaction writeConcern forwarding (#60): an unsatisfiable write concern
+     * (w greater than the replica-set size, with a short wtimeout) must surface
+     * as a write-concern error at commit — not a silent success. Both drivers
+     * must surface the same server error.
+     */
+    private function txnUnsatWriteConcern(object $db): array
+    {
+        $col = $db->selectCollection('txn_wc');
+        $col->drop();
+        $col->insertOne(['k' => 'seed']);
+
+        $session = $this->client->startSession();
+        $wc = $this->driver === 'c' ? new \MongoDB\Driver\WriteConcern(5, 500) : ['w' => 5, 'wtimeout' => 500];
+        $session->startTransaction(['writeConcern' => $wc]);
+        $col->insertOne(['k' => 'in-txn'], ['session' => $session]);
+
+        $err = $this->captureError(static fn () => $session->commitTransaction());
+
+        try {
+            $session->abortTransaction();
+        } catch (\Throwable) {
+            // commit already reached a terminal state
+        }
+
+        $session->endSession();
+
+        return ['err' => $err];
     }
 
     /**

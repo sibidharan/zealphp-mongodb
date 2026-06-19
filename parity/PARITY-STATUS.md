@@ -15,11 +15,11 @@ value-comparison rig* rather than papered over.
 
 ## Headline
 
-- **58 of 67** issues closed by PRs **#72–#110**, each with a rig op that
-  reproduces the bug and now passes. The rig runs **43 op groups, all
+- **60 of 67** issues closed by PRs **#72–#112**, each with a rig op that
+  reproduces the bug and now passes. The rig runs **45 op groups, all
   byte-identical** across the C (`ext-mongodb` + `mongodb/mongodb`) and Rust
   (`zealphp_mongodb`) stacks.
-- **9 remain open**, grouped below by *why* the value-comparison rig can't close
+- **7 remain open**, grouped below by *why* the value-comparison rig can't close
   them. None is a silent gap — each has a documented reason and a sketch of what
   closing it would take.
 - The original production defect — the `Cursor::toArray()` native-handle leak
@@ -42,14 +42,14 @@ test):
 | Typed exceptions | #19, #22, #27, #38, #41, #42, #43, #48, #50, #51, #52, #55 | `errors`, `index_conflict`, `map_reduce_parity`, client-side validation |
 | Indexes | #18, #56, #57, #58, #59 | `index_flags`, `drop_index_info`, `create_indexes_opts` |
 | Admin / client | #31, #32, #33, #34, #35, #36, #71 | `create_coll`, `concern_getters`, `db_info`, `client_manager`, `list_filter` |
-| Transactions | #20, #21, #62 | `txn_state`, `txn_commit`, `txn_abort` |
+| Transactions | #20, #21, #60, #61, #62 | `txn_state`, `txn_commit`, `txn_invalid_read_concern`, `txn_unsat_write_concern` |
 | Change streams | #24, #25, #26, #63, #64, #65 | `change_stream`, `cs_fields`, `cs_invalidate` |
 | GridFS | #29, #30, #66, #68 | `gridfs`, `gridfs_meta_omit` |
 | Server selection | #39 | `server_selection_timeout` |
 
 ---
 
-## Remaining open (9) — and exactly why
+## Remaining open (7) — and exactly why
 
 These are grouped by the *category of obstacle*, because the obstacle is the
 actionable part: it tells the next maintainer what infrastructure or design
@@ -95,29 +95,7 @@ byte-identical result is not expressible without re-architecting that model.
   race that cannot be staged deterministically in a value-comparison rig (the
   two stacks would observe different interleavings).
 
-### C. Deep transaction internals + cross-driver option-shape divergence (2)
-
-Both need the Rust `start_transaction` to forward concern options (it currently
-forwards only `maxCommitTimeMS`), **and** they hit an input-shape divergence the
-shared rig op can't express cleanly: the official `Session::startTransaction`
-takes a `MongoDB\Driver\ReadConcern`/`WriteConcern` *object*, while zeal's takes
-an array — and zeal's own `ReadConcern` (post-#68) validates levels *client-side*,
-so an invalid level would throw client-side on zeal but server-side on the C
-driver (different class/code), a new divergence rather than a fix.
-
-- **#60 — transaction-level writeConcern dropped** (unsatisfiable `w:5` commit
-  succeeds). Also needs an unsatisfiable-`w` replica topology to be *observable*
-  without hanging — the rig's replica set can't make `w:5` deterministically
-  unsatisfiable-yet-fast-failing.
-- **#61 — invalid transaction readConcern level silently accepted.** The most
-  deterministic of the two server-side, but blocked by the same option-shape and
-  client-vs-server validation-point divergence above.
-
-Closing these is a real project: forward the concerns through the ext, decide
-the client-vs-server validation boundary to match the C driver exactly, and
-provision a multi-node replica set with a known voting configuration.
-
-### D. Not producible / not observable from the PHP value surface (3)
+### C. Not producible / not observable from the PHP value surface (3)
 
 The dual-rig drives *both* drivers from PHP. If a value can't be produced from
 PHP, or two correct behaviours yield the same observable value, the rig has no
@@ -147,7 +125,12 @@ divergence to catch.
 
 ## How to extend this scorecard
 
-When you close one of the nine, follow `METHODOLOGY.md`: add the op that
+This scorecard is itself living proof of the loop: #60 and #61 started in
+category C of an earlier revision ("deep transaction internals, not cleanly
+rig-expressible") and were then closed by forwarding the concerns through the
+ext and reconciling the commit-time write-concern exception class — exactly the
+"here's what it would take" sketch, carried out. When you close one of the seven,
+follow `METHODOLOGY.md`: add the op that
 reproduces it, get `VERDICT: FULL PARITY ✓`, and move its row from "remaining" to
 "fixed" here. When you decide one is genuinely out of scope, keep it in its
 category with the reason — an honest "not closable this way, here's what it would

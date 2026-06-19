@@ -241,15 +241,52 @@ pub fn zealphp_mongodb_session_start(pool_id: i64, opts: Option<&Zval>) -> PhpRe
         .map_err(PhpException::default)
 }
 
+/// Build a mongodb ReadConcern from a PHP `['level' => '…']` sub-array. A custom
+/// (possibly invalid) level is forwarded as-is so the server validates it (#61).
+fn parse_txn_read_concern(z: &Zval) -> Option<mongodb::options::ReadConcern> {
+    let doc = bson_convert::php_to_doc(z).ok()?;
+    let level = doc.get_str("level").ok()?;
+    Some(mongodb::options::ReadConcern::custom(level))
+}
+
+/// Build a mongodb WriteConcern from a PHP `['w' => …, 'wtimeout' => …, 'j' => …]`
+/// sub-array so an unsatisfiable w surfaces at commit instead of being dropped
+/// (#60).
+fn parse_txn_write_concern(z: &Zval) -> Option<mongodb::options::WriteConcern> {
+    let doc = bson_convert::php_to_doc(z).ok()?;
+    let mut wc = mongodb::options::WriteConcern::default();
+    if let Ok(n) = doc.get_i64("w") {
+        wc.w = Some(mongodb::options::Acknowledgment::Nodes(n as u32));
+    } else if let Ok(n) = doc.get_i32("w") {
+        wc.w = Some(mongodb::options::Acknowledgment::Nodes(n as u32));
+    } else if let Ok(s) = doc.get_str("w") {
+        wc.w = Some(mongodb::options::Acknowledgment::from(s));
+    }
+    if let Ok(t) = doc.get_i64("wtimeout") {
+        wc.w_timeout = Some(std::time::Duration::from_millis(t as u64));
+    } else if let Ok(t) = doc.get_i32("wtimeout") {
+        wc.w_timeout = Some(std::time::Duration::from_millis(t as u64));
+    }
+    if let Ok(j) = doc.get_bool("j") {
+        wc.journal = Some(j);
+    }
+    Some(wc)
+}
+
 #[php_function]
 pub fn zealphp_mongodb_session_start_transaction(session_id: i64, opts: Option<&Zval>) -> PhpResult<()> {
-    let max_commit_time_ms = opts
-        .and_then(|z| z.array())
-        .and_then(|arr| arr.get("maxCommitTimeMS"))
+    let arr = opts.and_then(|z| z.array());
+    let max_commit_time_ms = arr
+        .and_then(|a| a.get("maxCommitTimeMS"))
         .and_then(|v| v.long())
         .map(|n| n as u64);
-    session::start_transaction(session_id as u64, session::TxnOptions { max_commit_time_ms })
-        .map_err(PhpException::default)
+    let read_concern = arr.and_then(|a| a.get("readConcern")).and_then(parse_txn_read_concern);
+    let write_concern = arr.and_then(|a| a.get("writeConcern")).and_then(parse_txn_write_concern);
+    session::start_transaction(
+        session_id as u64,
+        session::TxnOptions { max_commit_time_ms, read_concern, write_concern },
+    )
+    .map_err(PhpException::default)
 }
 
 #[php_function]

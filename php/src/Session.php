@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ZealPHP\MongoDB;
 
+use Throwable;
+use ZealPHP\MongoDB\Exception\ErrorMapper;
+
 use function function_exists;
 use function in_array;
 use function zealphp_mongodb_session_abort_transaction;
@@ -109,14 +112,27 @@ class Session
     public function commitTransaction(): void
     {
         $this->assertNotEnded();
-        zealphp_mongodb_session_commit_transaction($this->sessionId);
+        // Map a commit failure (e.g. an unsatisfiable transaction writeConcern,
+        // #60) to the typed CommandException the official driver throws instead
+        // of a bare \Exception.
+        try {
+            zealphp_mongodb_session_commit_transaction($this->sessionId);
+        } catch (Throwable $e) {
+            throw ErrorMapper::map($e, writeConcernAsCommand: true);
+        }
+
         $this->transactionState = self::TRANSACTION_COMMITTED;
     }
 
     public function abortTransaction(): void
     {
         $this->assertNotEnded();
-        zealphp_mongodb_session_abort_transaction($this->sessionId);
+        try {
+            zealphp_mongodb_session_abort_transaction($this->sessionId);
+        } catch (Throwable $e) {
+            throw ErrorMapper::map($e, writeConcernAsCommand: true);
+        }
+
         $this->transactionState = self::TRANSACTION_ABORTED;
     }
 
