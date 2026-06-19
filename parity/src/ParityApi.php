@@ -94,6 +94,7 @@ final class ParityApi
             'client_manager' => $this->clientManager(),
             'concern_getters' => $this->concernGetters(),
             'server_selection_timeout' => $this->serverSelectionTimeout(),
+            'create_indexes_opts' => $this->createIndexesOpts($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -221,6 +222,38 @@ final class ParityApi
         $col->dropIndex('ab_unique');
 
         return ['created' => $name, 'listed' => $list];
+    }
+
+    /**
+     * createIndexes batched-command parity (#59): multiple indexes in one call,
+     * with top-level command options (comment / maxTimeMS) that were silently
+     * dropped when createIndexes looped over per-index createIndex calls. The
+     * returned name list (incl. a default-generated name and a `name` override)
+     * and the actually-created indexes must match the official driver exactly.
+     */
+    private function createIndexesOpts(object $db): array
+    {
+        $col = $db->selectCollection('cix');
+        $col->drop();
+        $col->insertOne(['a' => 1, 'b' => 2, 'c' => 3]);
+
+        $created = $col->createIndexes(
+            [
+                ['key' => ['a' => 1]],
+                ['key' => ['b' => -1, 'c' => 1], 'unique' => true],
+                ['key' => ['c' => 1], 'name' => 'custom_c'],
+            ],
+            ['comment' => 'parity', 'maxTimeMS' => 10000],
+        );
+
+        $listed = [];
+        foreach ($col->listIndexes() as $ix) {
+            $listed[] = ['name' => $ix['name'] ?? (string) $ix->getName(), 'key' => $ix['key'] ?? $ix->getKey()];
+        }
+
+        \usort($listed, static fn ($x, $y) => \strcmp($x['name'], $y['name']));
+
+        return ['created' => $created, 'listed' => $listed];
     }
 
     private function bulk(object $col): array
