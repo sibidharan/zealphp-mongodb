@@ -122,8 +122,16 @@ class Bucket
         $optsOrNull = $opts ?: null;
         $bucket = $this->bucketArg();
         $id = zealphp_mongodb_gridfs_upload($this->poolId, $this->dbName, $bucket, $filename, $data, $optsOrNull);
+        $wrapped = Collection::wrapDoc($id);
 
-        return Collection::wrapDoc($id);
+        // The underlying driver writes metadata:null when none was provided; the
+        // official driver OMITS the field entirely. Strip it so the files
+        // document matches byte-for-byte (#29).
+        if (! isset($options['metadata'])) {
+            $this->getFilesCollection()->updateOne(['_id' => $wrapped], ['$unset' => ['metadata' => '']]);
+        }
+
+        return $wrapped;
     }
 
     // ── Download ────────────────────────────────────────────────────
