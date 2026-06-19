@@ -80,6 +80,7 @@ final class ParityApi
             'cs_invalidate' => $this->changeStreamInvalidate($db),
             'aggregate_opts' => $this->aggregateOpts($db),
             'bson_containers' => $this->bsonContainers($db),
+            'client_manager' => $this->clientManager(),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1204,6 +1205,18 @@ final class ParityApi
             'packedarray_queryable' => $col->countDocuments(['list' => 20]),
             'persistable_name' => $raw['person']['name'] ?? null,
             'persistable_has_pclass' => isset($raw['person']['__pclass']),
+        ];
+    }
+
+    /**
+     * Client::getManager() parity (cluster admin / #35): the client must expose
+     * the underlying MongoDB\Driver\Manager (calling it used to be a fatal
+     * undefined-method Error).
+     */
+    private function clientManager(): array
+    {
+        return [
+            'manager_is_driver_manager' => $this->client->getManager() instanceof \MongoDB\Driver\Manager,
         ];
     }
 }
