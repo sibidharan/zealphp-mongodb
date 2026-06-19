@@ -25,8 +25,11 @@ final class ParityApi
 
     public string $driver;
 
+    private string $uri;
+
     public function __construct(string $uri)
     {
+        $this->uri = $uri;
         if (\extension_loaded('zealphp-mongodb-ext')) {
             $this->client = new \ZealPHP\MongoDB\Client($uri);
             $this->driver = 'rust';
@@ -36,6 +39,14 @@ final class ParityApi
         } else {
             throw new \RuntimeException('No MongoDB driver loaded');
         }
+    }
+
+    /** A new client of the active driver type, configured with uriOptions. */
+    private function newClient(array $uriOptions): object
+    {
+        $class = $this->driver === 'rust' ? \ZealPHP\MongoDB\Client::class : \MongoDB\Client::class;
+
+        return new $class($this->uri, $uriOptions);
     }
 
     public function handle(string $op): array
@@ -81,6 +92,7 @@ final class ParityApi
             'aggregate_opts' => $this->aggregateOpts($db),
             'bson_containers' => $this->bsonContainers($db),
             'client_manager' => $this->clientManager(),
+            'concern_getters' => $this->concernGetters(),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -1217,6 +1229,21 @@ final class ParityApi
     {
         return [
             'manager_is_driver_manager' => $this->client->getManager() instanceof \MongoDB\Driver\Manager,
+        ];
+    }
+
+    /**
+     * Concern/preference getter parity (cluster admin / #32): a client built
+     * with uriOptions must reflect them in getReadPreference()/getWriteConcern(),
+     * not return hard-coded primary / w:1 defaults.
+     */
+    private function concernGetters(): array
+    {
+        $c = $this->newClient(['readPreference' => 'secondary', 'w' => 'majority']);
+
+        return [
+            'read_pref_mode' => $c->getReadPreference()->getModeString(),
+            'write_concern_w' => $c->getWriteConcern()->getW(),
         ];
     }
 }

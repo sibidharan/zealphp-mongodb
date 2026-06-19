@@ -185,19 +185,21 @@ class Client implements Stringable
     private WriteConcern|null $writeConcern = null;
     private ReadPreference|null $readPreference = null;
 
+    // The concern/preference getters now reflect the uriOptions the client was
+    // built with instead of always returning hard-coded defaults (#32).
     public function getReadConcern(): ReadConcern
     {
-        return $this->readConcern ?? new ReadConcern();
+        return $this->readConcern ?? new ReadConcern($this->uriOptions['readConcernLevel'] ?? null);
     }
 
     public function getWriteConcern(): WriteConcern
     {
-        return $this->writeConcern ?? new WriteConcern(1);
+        return $this->writeConcern ?? new WriteConcern($this->uriOptions['w'] ?? 1);
     }
 
     public function getReadPreference(): ReadPreference
     {
-        return $this->readPreference ?? new ReadPreference(ReadPreference::PRIMARY);
+        return $this->readPreference ?? new ReadPreference($this->uriOptions['readPreference'] ?? ReadPreference::PRIMARY);
     }
 
     public function getTypeMap(): array
