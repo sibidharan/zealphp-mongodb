@@ -114,12 +114,22 @@ divergence to catch.
   ambiguity); fixing it means replacing the encoding channel, not a value tweak.
   Extremely rare in real documents.
 
-- **#67 — per-operation readPreference routing ignored.** On a replica set a
-  secondary returns the *same data* as the primary, so routing is **not
-  value-observable**; an unsatisfiable preference needs a specific tagged
-  topology, and `directConnection` bypasses routing entirely. Verifying it needs
-  a tagged multi-node set plus server-introspection (which member served the
-  read) that the value rig doesn't capture.
+- **#67 — per-operation readPreference routing ignored.** The *primary*
+  behaviour is value-invariant: a secondary returns the **same replicated data**
+  as the primary, so routing-to-a-secondary cannot be caught by comparing return
+  values — even with a multi-node set, you'd need server-introspection (which
+  member served the read), which the value rig doesn't capture. The one
+  *observable* facet — an unsatisfiable preference erroring — is reachable but
+  needs a real build-out, scoped here so it isn't mistaken for a one-liner:
+  (1) forward `readPreference` into `FindOptions.selection_criteria` in the ext
+  (a `bson::from_document::<SelectionCriteria>` of `{mode: …}` — straightforward);
+  (2) route the deferred-cursor find path through `ErrorMapper` (it currently
+  isn't guarded); (3) reconcile the exception class — a server-selection timeout
+  is a `ConnectionTimeoutException` on libmongoc but `ErrorKind::ServerSelection`
+  → `RuntimeException` on the Rust driver, so `errconv`/`ErrorMapper` need a new
+  mapping; and (4) drive it from a **non-`directConnection`** client (the rig URI
+  pins `directConnection=true`, which bypasses selection on the single-node set).
+  Each piece is known; together they're a focused follow-up, not a quick fix.
 
 ---
 
