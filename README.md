@@ -73,7 +73,7 @@ Builds both stacks (Apache + mod_php + pecl ext-mongodb vs ZealPHP + OpenSwoole 
 | Sessions on `watch()` / causally-consistent change streams | not implemented |
 | `mapReduce`, legacy `count` server command | not implemented (also removed in `mongodb/mongodb` 2.x) |
 
-Anything in the "not implemented" rows **throws** (`Exception\RuntimeException`) rather than silently no-oping.
+Methods in the "not implemented" rows that still exist on the official surface **throw** (`Exception\RuntimeException`) rather than silently no-oping. Methods that were *removed* in `mongodb/mongodb` 2.x — notably `mapReduce` — are absent here too, so calling one is a fatal undefined-method `Error`, exactly as on the official 2.x driver (verified by the `map_reduce_parity` op in the parity rig).
 
 ## Requirements
 

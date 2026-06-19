@@ -95,6 +95,7 @@ final class ParityApi
             'concern_getters' => $this->concernGetters(),
             'server_selection_timeout' => $this->serverSelectionTimeout(),
             'create_indexes_opts' => $this->createIndexesOpts($db),
+            'map_reduce_parity' => $this->mapReduceParity($db),
             default => throw new \InvalidArgumentException("unknown op: $op"),
         };
 
@@ -254,6 +255,31 @@ final class ParityApi
         \usort($listed, static fn ($x, $y) => \strcmp($x['name'], $y['name']));
 
         return ['created' => $created, 'listed' => $listed];
+    }
+
+    /**
+     * mapReduce parity (#43): mongodb/mongodb 2.x removed mapReduce entirely, so
+     * calling it is a fatal undefined-method Error on BOTH drivers — not a
+     * silent no-op and not the divergent RuntimeException an old README line
+     * claimed. Capture the throwable class + that it is an undefined-method
+     * error (the class name in the message is normalized away by the substring
+     * check) so the two drivers compare identical.
+     */
+    private function mapReduceParity(object $db): array
+    {
+        $col = $db->selectCollection('items');
+        try {
+            /** @phpstan-ignore-next-line — intentionally calling a removed method */
+            $col->mapReduce('function () {}', 'function () {}', ['inline' => 1]);
+
+            return ['threw' => false];
+        } catch (\Throwable $e) {
+            return [
+                'threw' => true,
+                'class' => \get_class($e),
+                'undefined_method' => \str_contains($e->getMessage(), 'undefined method'),
+            ];
+        }
     }
 
     private function bulk(object $col): array
