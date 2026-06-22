@@ -115,7 +115,7 @@ namespace OpenSwoole {
         public static function exec(string $command, bool $getStdErr = false): array { return []; }
     }
     class Event {
-        public static function add(int $fd, callable $read = null, callable $write = null, int $flags = 0): bool { return false; }
+        public static function add(int $fd, ?callable $read = null, ?callable $write = null, int $flags = 0): bool { return false; }
         public static function del(int $fd): bool { return false; }
     }
 }
