@@ -1,4 +1,5 @@
 use bson::{Bson, Document};
+use mongodb::options::UpdateModifications;
 use bson::raw::{RawBsonRef, RawDocumentBuf};
 use bson::spec::ElementType;
 use ext_php_rs::boxed::ZBox;
@@ -117,6 +118,37 @@ pub fn php_to_doc(zval: &Zval) -> Result<Document, String> {
         Some(arr) => hash_table_to_doc(arr),
         None => Err("Expected array for BSON document".into()),
     }
+}
+
+/// Convert the `$update` argument of updateOne / updateMany / findOneAndUpdate.
+///
+/// A non-empty PHP list (keys 0..n-1) is an update PIPELINE (MongoDB 4.2+) and
+/// is sent to the server as an array of stage documents, as libmongoc and
+/// mongodb/mongodb do; anything else is an update document. Before this the
+/// list was flattened into a document keyed "0", "1", … which the Rust driver
+/// rejects with "update document must only contain update modifiers" (#46).
+/// The PHP wrapper validates the shape first (same rule as mongodb/mongodb);
+/// a non-document stage is still refused here for direct ext callers.
+pub fn php_to_update(zval: &Zval) -> Result<UpdateModifications, String> {
+    let arr = zval.array().ok_or_else(|| "Expected array for update".to_string())?;
+    if arr.len() > 0 && is_list(arr) {
+        let mut stages = Vec::with_capacity(arr.len());
+        for (_, val) in arr.iter() {
+            match zval_to_bson(val)? {
+                Bson::Document(stage) => stages.push(stage),
+                _ => return Err("Update pipeline stages must be documents".into()),
+            }
+        }
+        return Ok(UpdateModifications::Pipeline(stages));
+    }
+    Ok(UpdateModifications::Document(hash_table_to_doc(arr)?))
+}
+
+/// True when the array's keys are exactly 0, 1, … in order (a PHP list).
+fn is_list(ht: &ZendHashTable) -> bool {
+    ht.iter().enumerate().all(|(i, (key, _))| {
+        matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
+    })
 }
 
 fn hash_table_to_doc(ht: &ZendHashTable) -> Result<Document, String> {
@@ -271,10 +303,7 @@ fn zval_to_bson(zval: &Zval) -> Result<Bson, String> {
             return Ok(bson_type);
         }
 
-        let is_sequential = arr.iter().enumerate().all(|(i, (key, _))| {
-            matches!(key, ext_php_rs::types::ArrayKey::Long(n) if n == i as i64)
-        });
-        if is_sequential {
+        if is_list(arr) {
             let mut bson_arr = Vec::with_capacity(arr.len());
             for (_, val) in arr.iter() {
                 bson_arr.push(zval_to_bson(val)?);

@@ -1,6 +1,7 @@
 use bson::{doc, Bson, Document};
 use bson::raw::RawDocumentBuf;
 use futures::StreamExt;
+use mongodb::options::UpdateModifications;
 use mongodb::Client;
 
 use crate::async_store::AsyncResult;
@@ -13,6 +14,7 @@ pub async fn exec_async(
     op: String,
     filter_or_doc: Option<Document>,
     update_or_pipeline: Option<Vec<Document>>,
+    update_mods: Option<UpdateModifications>,
 ) -> AsyncResult {
     let read_col = client.database(&db).collection::<RawDocumentBuf>(&col);
     let write_col = client.database(&db).collection::<Document>(&col);
@@ -64,7 +66,7 @@ pub async fn exec_async(
         }
         "update_one" => {
             let filter = filter_or_doc.unwrap_or_default();
-            let update = update_or_pipeline.and_then(|v| v.into_iter().next()).unwrap_or_default();
+            let update = update_mods.unwrap_or_else(|| UpdateModifications::Document(Document::new()));
             let mut uo = mongodb::options::UpdateOptions::default();
             if let Some(ref opts) = opts_doc {
                 if let Ok(upsert) = opts.get_bool("upsert") {
@@ -78,7 +80,7 @@ pub async fn exec_async(
         }
         "update_many" => {
             let filter = filter_or_doc.unwrap_or_default();
-            let update = update_or_pipeline.and_then(|v| v.into_iter().next()).unwrap_or_default();
+            let update = update_mods.unwrap_or_else(|| UpdateModifications::Document(Document::new()));
             let mut uo = mongodb::options::UpdateOptions::default();
             if let Some(ref opts) = opts_doc {
                 if let Ok(upsert) = opts.get_bool("upsert") {
@@ -163,7 +165,7 @@ pub async fn exec_async(
         }
         "find_one_and_update" => {
             let filter = filter_or_doc.unwrap_or_default();
-            let update = update_or_pipeline.and_then(|v| v.into_iter().next()).unwrap_or_default();
+            let update = update_mods.unwrap_or_else(|| UpdateModifications::Document(Document::new()));
             let fo = build_find_and_modify_options(&opts_doc);
             match read_col.find_one_and_update(filter, update).with_options(fo).await {
                 Ok(doc) => AsyncResult::Doc(doc),

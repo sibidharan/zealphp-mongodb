@@ -9,6 +9,7 @@
 
 use bson::raw::RawDocumentBuf;
 use bson::Document;
+use mongodb::options::UpdateModifications;
 use mongodb::Client;
 
 use crate::coroutine;
@@ -81,7 +82,7 @@ pub fn insert_many(
 }
 
 pub fn update_one(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications,
     opts: mongodb::options::UpdateOptions, session: SharedSession,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
@@ -92,7 +93,7 @@ pub fn update_one(
 }
 
 pub fn update_many(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications,
     opts: mongodb::options::UpdateOptions, session: SharedSession,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
@@ -155,7 +156,7 @@ pub fn distinct(
 }
 
 pub fn find_one_and_update(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications,
     opts: mongodb::options::FindOneAndUpdateOptions, session: SharedSession,
 ) -> Result<Option<RawDocumentBuf>, String> {
     let collection = client.database(db).collection::<RawDocumentBuf>(col);

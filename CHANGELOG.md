@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Update pipelines (MongoDB 4.2+) on `updateOne()`, `updateMany()`, `findOneAndUpdate()` and `bulkWrite()` update ops** (#46). An update given as a list of stages (`[['$set' => [...]], ['$unset' => '...']]`) was flattened by the ext into a document keyed `"0"`, `"1"`, … and the Rust driver refused it with `update document must only contain update modifiers`, while libmongoc / `mongodb/mongodb` send it to the server as an array. The ext now converts `$update` with `php_to_update()`: a non-empty list is `UpdateModifications::Pipeline`, anything else `UpdateModifications::Document` — on the plain, session (transaction) and `zealphp_mongodb_exec_async()` paths.
+- **`$update` is validated in PHP with the official rule and message.** As in `mongodb/mongodb` (`is_first_key_operator() || is_pipeline()`), an update must be an operator document or a non-empty list of operator stages; anything else (a replacement document, `[]`, a non-operator stage) now throws `ZealPHP\MongoDB\Exception\InvalidArgumentException` ("Expected update operator(s) or non-empty pipeline for $update") before any server round-trip, instead of a bare `\Exception` carrying the raw Rust error. The wider exception-hierarchy parity is tracked in #41.
+
+### Tests
+- `tests/Unit/UpdateValidationTest.php` (validation, no ext needed) and `tests/Integration/PipelineUpdateTest.php` (pipelines on every update path incl. upsert, `BSONArray`, `bulkWrite`, `exec_async`, and a transaction when `MONGODB_RS_URI` is set).
+
 ## [0.3.5] - 2026-06-10
 
 ### Added
