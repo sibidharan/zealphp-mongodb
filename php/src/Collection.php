@@ -20,8 +20,10 @@ use ZealPHP\MongoDB\BSON\Javascript;
 use ZealPHP\MongoDB\BSON\MaxKey;
 use ZealPHP\MongoDB\BSON\MinKey;
 use ZealPHP\MongoDB\BSON\Timestamp;
+use ZealPHP\MongoDB\Exception\InvalidArgumentException;
 
 use function array_is_list;
+use function array_key_first;
 use function array_map;
 use function array_merge;
 use function base64_decode;
@@ -32,7 +34,9 @@ use function get_object_vars;
 use function hexdec;
 use function is_array;
 use function is_object;
+use function is_string;
 use function str_pad;
+use function str_starts_with;
 use function zealphp_mongodb_aggregate;
 use function zealphp_mongodb_aggregate_all;
 use function zealphp_mongodb_batch_result;
@@ -127,7 +131,9 @@ class Collection
     public function updateOne(array|object $filter, array|object $update, array $options = []): UpdateResult
     {
         $filter = self::prepareBSON((array) $filter);
-        $update = self::prepareBSON((array) $update);
+        $update = (array) $update;
+        self::assertValidUpdate($update);
+        $update = self::prepareBSON($update);
         $opts = self::mapOptions($options);
 
         return new UpdateResult(zealphp_mongodb_update_one($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
@@ -136,7 +142,9 @@ class Collection
     public function updateMany(array|object $filter, array|object $update, array $options = []): UpdateResult
     {
         $filter = self::prepareBSON((array) $filter);
-        $update = self::prepareBSON((array) $update);
+        $update = (array) $update;
+        self::assertValidUpdate($update);
+        $update = self::prepareBSON($update);
         $opts = self::mapOptions($options);
 
         return new UpdateResult(zealphp_mongodb_update_many($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts));
@@ -202,7 +210,9 @@ class Collection
     public function findOneAndUpdate(array|object $filter, array|object $update, array $options = []): BSONDocument|Document|array|null
     {
         $filter = self::prepareBSON((array) $filter);
-        $update = self::prepareBSON((array) $update);
+        $update = (array) $update;
+        self::assertValidUpdate($update);
+        $update = self::prepareBSON($update);
         $opts = self::mapOptions($options);
 
         $result = zealphp_mongodb_find_one_and_update($this->poolId, $this->dbName, $this->colName, $filter, $update, $opts);
@@ -491,6 +501,57 @@ class Collection
         }
 
         return $wrapped;
+    }
+
+    /**
+     * Same rule and exception as mongodb/mongodb (is_first_key_operator() ||
+     * is_pipeline()): an update is either a document whose first key is a "$"
+     * operator, or a non-empty list of pipeline stages (MongoDB 4.2+) that each
+     * start with a "$" operator. Anything else — a replacement document, an
+     * empty update, a stage that is not an operator document — is rejected
+     * before it reaches the server.
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function assertValidUpdate(array $update): void
+    {
+        if (self::isFirstKeyOperator($update) || self::isPipeline($update)) {
+            return;
+        }
+
+        throw new InvalidArgumentException('Expected update operator(s) or non-empty pipeline for $update');
+    }
+
+    private static function isFirstKeyOperator(array $document): bool
+    {
+        $firstKey = array_key_first($document);
+
+        return is_string($firstKey) && str_starts_with($firstKey, '$');
+    }
+
+    private static function isPipeline(array $pipeline): bool
+    {
+        if ($pipeline === [] || ! array_is_list($pipeline)) {
+            return false;
+        }
+
+        foreach ($pipeline as $stage) {
+            if (is_array($stage)) {
+                $stageDoc = $stage;
+            } elseif ($stage instanceof BSONDocument) {
+                $stageDoc = $stage->getArrayCopy();
+            } elseif (is_object($stage) && ! $stage instanceof BSONArray) {
+                $stageDoc = get_object_vars($stage);
+            } else {
+                return false;
+            }
+
+            if (! self::isFirstKeyOperator($stageDoc)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static function prepareBSON(mixed $data): mixed

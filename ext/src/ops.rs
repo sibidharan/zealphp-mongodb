@@ -1,5 +1,6 @@
 use bson::Document;
 use bson::raw::RawDocumentBuf;
+use mongodb::options::UpdateModifications;
 use mongodb::Client;
 
 use crate::coroutine;
@@ -39,7 +40,7 @@ pub fn update_one(
     db: &str,
     col: &str,
     filter: Document,
-    update: Document,
+    update: UpdateModifications,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move { collection.update_one(filter, update).await })
@@ -50,7 +51,7 @@ pub fn update_many(
     db: &str,
     col: &str,
     filter: Document,
-    update: Document,
+    update: UpdateModifications,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move { collection.update_many(filter, update).await })
@@ -124,7 +125,7 @@ pub fn find_one_and_update(
     db: &str,
     col: &str,
     filter: Document,
-    update: Document,
+    update: UpdateModifications,
 ) -> Result<Option<RawDocumentBuf>, String> {
     let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one_and_update(filter, update).await })
@@ -298,14 +299,14 @@ pub fn find_one_with_options(
 }
 
 pub fn update_one_with_options(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document, opts: mongodb::options::UpdateOptions,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications, opts: mongodb::options::UpdateOptions,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move { collection.update_one(filter, update).with_options(opts).await })
 }
 
 pub fn update_many_with_options(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document, opts: mongodb::options::UpdateOptions,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications, opts: mongodb::options::UpdateOptions,
 ) -> Result<mongodb::results::UpdateResult, String> {
     let collection = client.database(db).collection::<Document>(col);
     coroutine::run_sync(async move { collection.update_many(filter, update).with_options(opts).await })
@@ -319,7 +320,7 @@ pub fn replace_one_with_options(
 }
 
 pub fn find_one_and_update_with_options(
-    client: &Client, db: &str, col: &str, filter: Document, update: Document, opts: mongodb::options::FindOneAndUpdateOptions,
+    client: &Client, db: &str, col: &str, filter: Document, update: UpdateModifications, opts: mongodb::options::FindOneAndUpdateOptions,
 ) -> Result<Option<RawDocumentBuf>, String> {
     let collection = client.database(db).collection::<RawDocumentBuf>(col);
     coroutine::run_sync(async move { collection.find_one_and_update(filter, update).with_options(opts).await })

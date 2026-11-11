@@ -519,7 +519,7 @@ pub fn zealphp_mongodb_update_one(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update(update).map_err(|e| PhpException::default(e))?;
     let uo = parse_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::update_one(&client, db, col, filter_doc, update_doc, uo, sess),
@@ -540,7 +540,7 @@ pub fn zealphp_mongodb_update_many(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update(update).map_err(|e| PhpException::default(e))?;
     let uo = parse_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::update_many(&client, db, col, filter_doc, update_doc, uo, sess),
@@ -679,7 +679,7 @@ pub fn zealphp_mongodb_find_one_and_update(
 ) -> PhpResult<Zval> {
     let client = pool::get_client(pool_id as u64).map_err(|e| PhpException::default(e))?;
     let filter_doc = bson_convert::php_to_doc(filter).map_err(|e| PhpException::default(e))?;
-    let update_doc = bson_convert::php_to_doc(update).map_err(|e| PhpException::default(e))?;
+    let update_doc = bson_convert::php_to_update(update).map_err(|e| PhpException::default(e))?;
     let fo = parse_find_one_and_update_options(opts);
     let result = match parse_session(opts)? {
         Some(sess) => ops_session::find_one_and_update(&client, db, col, filter_doc, update_doc, fo, sess),
@@ -1275,7 +1275,18 @@ pub fn zealphp_mongodb_exec_async(
     } else {
         None
     };
-    let update_docs = if !update_or_pipeline.is_null() {
+    // Update ops carry their `$update` separately as UpdateModifications so an
+    // update PIPELINE (a PHP list of stages) reaches the server as an array
+    // instead of being flattened into a document (#46).
+    let is_update_op = matches!(op, "update_one" | "update_many" | "find_one_and_update");
+    let update_mods = if is_update_op && !update_or_pipeline.is_null() {
+        Some(bson_convert::php_to_update(update_or_pipeline).map_err(|e| PhpException::default(e))?)
+    } else {
+        None
+    };
+    let update_docs = if is_update_op {
+        None
+    } else if !update_or_pipeline.is_null() {
         if op == "aggregate" || op == "aggregate_cursor" {
             Some(bson_convert::php_to_pipeline(update_or_pipeline).map_err(|e| PhpException::default(e))?)
         } else {
@@ -1297,7 +1308,7 @@ pub fn zealphp_mongodb_exec_async(
 
     coroutine::spawn_task(
         async move {
-            async_ops::exec_async(client, db_s, col_s, op_s, filter_doc, update_docs).await
+            async_ops::exec_async(client, db_s, col_s, op_s, filter_doc, update_docs, update_mods).await
         },
         task_id,
         efd,
